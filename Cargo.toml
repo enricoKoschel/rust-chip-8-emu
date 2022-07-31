@@ -1,0 +1,18 @@
+[package]
+name = "chip-8-emu"
+version = "0.1.0"
+edition = "2021"
+authors = ["Enrico Koschel"]
+description = "Chip-8 emulator"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+eframe = "0.18.0"
+egui_extras = "0.18.0"
+winit = "0.27.1"
+spin_sleep = "1.1.1"
+single_value_channel = "1.2.2"
+rc_event_queue = "0.4.2"
+pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/" }
