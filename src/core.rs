@@ -62,6 +62,15 @@ pub struct Core {
 	sleep_error_millis: f64,
 	state_updater: single_value_channel::Updater<CoreState>,
 	events: EventReader<Event, DefaultSettings>,
+	memory: [u8; 4096],
+	///V0-VF
+	v_registers: [u8; 16],
+	///Address register - actually 12 bits
+	i_register: u16,
+	program_counter: u16,
+	call_stack: Vec<u16>,
+	delay_timer: u8,
+	sound_timer: u8,
 }
 
 impl Core {
@@ -78,6 +87,15 @@ impl Core {
 			sleep_error_millis: 0.0,
 			state_updater,
 			events,
+			memory: [0; 4096],
+			v_registers: [0; 16],
+			i_register: 0,
+			//Start PC at 512 because the lower 512 bytes were reserved
+			//for the interpreter on original hardware
+			program_counter: 512,
+			call_stack: vec![],
+			delay_timer: 0,
+			sound_timer: 0,
 		}
 	}
 
