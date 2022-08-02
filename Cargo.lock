@@ -1272,7 +1272,7 @@ checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 [[package]]
 name = "pixel_buf"
 version = "0.1.0"
-source = "git+https://github.com/enricoKoschel/pixel_buf/#c860a5b6631a20e57b4a14e6a55d9bbd3516136d"
+source = "git+https://github.com/enricoKoschel/pixel_buf/?rev=add48a0b594b4623c45e8a977bfdab6b2b66f271#add48a0b594b4623c45e8a977bfdab6b2b66f271"
 
 [[package]]
 name = "pkg-config"

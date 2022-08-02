@@ -15,5 +15,5 @@ winit = "0.27.1"
 spin_sleep = "1.1.1"
 single_value_channel = "1.2.2"
 rc_event_queue = "0.4.2"
-pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/" }
+pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/", rev = "add48a0b594b4623c45e8a977bfdab6b2b66f271" }
 rand = "0.8.5"

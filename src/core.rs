@@ -1,5 +1,5 @@
 use eframe::egui;
-use pixel_buf::PixelBuf;
+use pixel_buf::{PixelBuf, Rgba};
 use rc_event_queue::spmc::{DefaultSettings, EventQueue, EventReader};
 use rc_event_queue::LendingIterator;
 use std::time::Duration;
@@ -133,7 +133,8 @@ impl Core {
 	pub fn create_and_run(
 		ctx: egui::Context,
 	) -> (single_value_channel::Receiver<CoreState>, EventQueue<Event>) {
-		let state = CoreState::new(PixelBuf::new_test_image([BASE_WIDTH, BASE_HEIGHT]));
+		//TODO have better starting screen
+		let state = CoreState::new(PixelBuf::new([BASE_WIDTH, BASE_HEIGHT]));
 		let (state_receiver, state_updater) =
 			single_value_channel::channel_starting_with(state.clone());
 
@@ -171,7 +172,6 @@ impl Core {
 			});
 		}
 
-		println!("ROM size: {}", rom.len());
 		self.state.memory[512..(rom.len() + 512)].copy_from_slice(&rom);
 	}
 
@@ -219,11 +219,6 @@ impl Core {
 		}
 	}
 
-	fn update_gui(&self) {
-		self.state_updater.update(self.state.clone()).unwrap();
-		self.ctx.request_repaint();
-	}
-
 	fn handle_events(&mut self) {
 		let mut update_gui = false;
 
@@ -266,7 +261,20 @@ impl Core {
 	}
 
 	fn step_frame(&mut self) {
-		self.execute_opcode();
+		for _ in 0..20 {
+			self.execute_opcode();
+		}
+		self.update_timers();
+	}
+
+	fn update_timers(&mut self) {
+		if self.state.delay_timer > 0 {
+			self.state.delay_timer -= 1;
+		}
+		//TODO Play sound when sound timer is > 0
+		if self.state.sound_timer > 0 {
+			self.state.sound_timer -= 1;
+		}
 	}
 
 	fn execute_opcode(&mut self) {
@@ -297,7 +305,9 @@ impl Core {
 
 	fn execute_opcode_0(&mut self, opcode: u16) {
 		match opcode {
-			0x00E0 => todo!(), //Clear the screen
+			0x00E0 => {
+				self.state.image.clear(Rgba::black());
+			}
 			0x00EE => {
 				//0x00EE: Return from a subroutine
 				match self.state.call_stack.pop() {
@@ -506,11 +516,48 @@ impl Core {
 		self.state.v_registers[x as usize] = rand::random::<u8>() & mask;
 	}
 
-	fn execute_opcode_d(&mut self, _opcode: u16) {
+	fn execute_opcode_d(&mut self, opcode: u16) {
 		//0xDXYN: Draw a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
 		//Each row is read starting from memory location I; The value of I does not change after the execution of this instruction.
 		//VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen
-		todo!();
+		let (x, y, height) = {
+			let x = (opcode & 0x0F00) >> 8;
+			let y = (opcode & 0x00F0) >> 4;
+			let n = opcode & 0x000F;
+
+			(
+				self.state.v_registers[x as usize],
+				self.state.v_registers[y as usize],
+				n as u8,
+			)
+		};
+
+		self.state.v_registers[0xF] = 0;
+
+		for row in 0..=height {
+			let raw_byte = self.state.memory[self.state.i_register as usize + row as usize];
+
+			for col in 0..=7 {
+				let x = (x + col) as usize;
+				let y = (y + row) as usize;
+				let pixel_value = (raw_byte >> (7 - col)) & 0x1;
+				let old_pixel_value = if self.state.image[(x, y)] == Rgba::white() {
+					1
+				} else {
+					0
+				};
+				self.state.image[(x, y)] = if (pixel_value ^ old_pixel_value) == 1 {
+					Rgba::white()
+				} else {
+					Rgba::black()
+				};
+
+				//Set VF to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen
+				if pixel_value != old_pixel_value {
+					self.state.v_registers[0xF] = 1;
+				}
+			}
+		}
 	}
 
 	fn execute_opcode_e(&mut self, opcode: u16) {
@@ -593,6 +640,12 @@ impl Core {
 				address: self.state.program_counter - 2,
 			}),
 		}
+	}
+
+	#[inline]
+	fn update_gui(&self) {
+		self.state_updater.update(self.state.clone()).unwrap();
+		self.ctx.request_repaint();
 	}
 
 	#[inline]
