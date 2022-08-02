@@ -3,7 +3,7 @@ use pixel_buf::PixelBuf;
 use rc_event_queue::spmc::{DefaultSettings, EventQueue, EventReader};
 use rc_event_queue::LendingIterator;
 use std::time::Duration;
-use std::{fmt, thread};
+use std::{fmt, fs, thread};
 
 const FPS: f64 = 60.0;
 pub const NAME: &str = "Chip-8 Emulator";
@@ -35,19 +35,46 @@ pub enum Event {
 }
 
 #[derive(Clone)]
-pub struct CoreError {
-	pub message: String,
+pub enum ErrorKind {
+	InvalidOpcode {
+		opcode: u16,
+		address: u16,
+	},
+	InvalidReturn {
+		address: u16,
+	},
+	RomTooLarge {
+		name: String,
+		size: usize,
+		allowed: usize,
+	},
 }
 
-impl CoreError {
-	pub fn new(message: String) -> Self {
-		Self { message }
-	}
-}
-
-impl fmt::Display for CoreError {
+impl fmt::Display for ErrorKind {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "{}", self.message)
+		match self {
+			ErrorKind::InvalidOpcode { opcode, address } => {
+				write!(
+					f,
+					"Invalid opcode: '{:#06X}' at PC: '{:#06X}'",
+					opcode, address
+				)
+			}
+			ErrorKind::InvalidReturn { address } => {
+				write!(f, "Invalid return at PC: '{:#06X}'", address)
+			}
+			ErrorKind::RomTooLarge {
+				name,
+				size,
+				allowed,
+			} => {
+				write!(
+					f,
+					"ROM '{}' is too large: '{}' bytes, allowed: '{}' bytes",
+					name, size, allowed
+				)
+			}
+		}
 	}
 }
 
@@ -59,7 +86,7 @@ pub struct CoreState {
 	pub frame_time_with_sleep: Duration,
 	pub fps: f64,
 	pub config: Config,
-	pub error: Option<CoreError>,
+	pub error: Option<ErrorKind>,
 	pub memory: [u8; 4096],
 	///V0-VF
 	pub v_registers: [u8; 16],
@@ -121,11 +148,31 @@ impl Core {
 			events: event_reader,
 		};
 
+		core.load_game();
+
 		thread::spawn(move || {
 			core.run();
 		});
 
 		(state_receiver, event_sender)
+	}
+
+	fn load_game(&mut self) {
+		//TODO Get rom path from GUI
+		let path = "roms/demos/Trip8 Demo (2008) [Revival Studios].ch8";
+		let rom = fs::read(path).unwrap();
+
+		//The lower 512 bytes were reserved for the interpreter on original hardware
+		if rom.len() > 4096 - 512 {
+			self.core_error(ErrorKind::RomTooLarge {
+				name: path.to_string(),
+				size: rom.len(),
+				allowed: 4096 - 512,
+			});
+		}
+
+		println!("ROM size: {}", rom.len());
+		self.state.memory[512..(rom.len() + 512)].copy_from_slice(&rom);
 	}
 
 	pub fn run(&mut self) {
@@ -255,10 +302,15 @@ impl Core {
 				//0x00EE: Return from a subroutine
 				match self.state.call_stack.pop() {
 					Some(pc) => self.state.program_counter = pc,
-					None => self.invalid_return(),
+					None => self.core_error(ErrorKind::InvalidReturn {
+						address: self.state.program_counter - 2,
+					}),
 				};
 			}
-			_ => self.invalid_opcode(opcode),
+			_ => self.core_error(ErrorKind::InvalidOpcode {
+				opcode,
+				address: self.state.program_counter - 2,
+			}),
 		}
 	}
 
@@ -300,7 +352,10 @@ impl Core {
 		//0x5XY0: Skip next instruction if VX equals VY
 		let last_nibble = opcode & 0x000F;
 		if last_nibble != 0x0 {
-			self.invalid_opcode(opcode);
+			self.core_error(ErrorKind::InvalidOpcode {
+				opcode,
+				address: self.state.program_counter - 2,
+			});
 		}
 
 		let x = (opcode & 0x0F00) >> 8;
@@ -406,7 +461,10 @@ impl Core {
 				self.state.v_registers[0xF] = (self.state.v_registers[x as usize] >> 7) & 0x1;
 				self.state.v_registers[x as usize] <<= 1;
 			}
-			_ => self.invalid_opcode(opcode),
+			_ => self.core_error(ErrorKind::InvalidOpcode {
+				opcode,
+				address: self.state.program_counter - 2,
+			}),
 		}
 	}
 
@@ -414,7 +472,10 @@ impl Core {
 		//0x9XY0: Skip next instruction if VX doesn't equal VY
 		let last_nibble = opcode & 0x000F;
 		if last_nibble != 0x0 {
-			self.invalid_opcode(opcode);
+			self.core_error(ErrorKind::InvalidOpcode {
+				opcode,
+				address: self.state.program_counter - 2,
+			});
 		}
 
 		let x = (opcode & 0x0F00) >> 8;
@@ -465,7 +526,10 @@ impl Core {
 				//0xEXA1: Skip next instruction if the key stored in VX isn't pressed.
 				todo!();
 			}
-			_ => self.invalid_opcode(opcode),
+			_ => self.core_error(ErrorKind::InvalidOpcode {
+				opcode,
+				address: self.state.program_counter - 2,
+			}),
 		}
 	}
 
@@ -524,7 +588,10 @@ impl Core {
 					self.state.v_registers[i as usize] = self.read_mem(self.state.i_register + i);
 				}
 			}
-			_ => self.invalid_opcode(opcode),
+			_ => self.core_error(ErrorKind::InvalidOpcode {
+				opcode,
+				address: self.state.program_counter - 2,
+			}),
 		}
 	}
 
@@ -534,24 +601,7 @@ impl Core {
 	}
 
 	#[inline]
-	fn invalid_opcode(&mut self, opcode: u16) {
-		self.core_error(CoreError::new(format!(
-			"Invalid opcode: '{:#X}' at PC: '{:#X}'",
-			opcode,
-			self.state.program_counter - 2
-		)));
-	}
-
-	#[inline]
-	fn invalid_return(&mut self) {
-		self.core_error(CoreError::new(format!(
-			"Invalid return at PC: '{:#X}'",
-			self.state.program_counter - 2
-		)));
-	}
-
-	#[inline]
-	fn core_error(&mut self, error: CoreError) {
+	fn core_error(&mut self, error: ErrorKind) {
 		self.state.error = Some(error);
 		self.update_gui();
 	}

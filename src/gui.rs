@@ -165,7 +165,7 @@ impl Gui {
 
 		if let Some(error) = &state.error {
 			//TODO show error in window
-			println!("Core error: {}", error);
+			println!("[ERROR] {}", error);
 
 			//Create new core
 			let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
