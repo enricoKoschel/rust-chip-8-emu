@@ -1,8 +1,9 @@
 use eframe::egui;
 use pixel_buf::PixelBuf;
-use rc_event_queue::spmc::{DefaultSettings, EventReader};
+use rc_event_queue::spmc::{DefaultSettings, EventQueue, EventReader};
 use rc_event_queue::LendingIterator;
 use std::time::Duration;
+use std::{fmt, thread};
 
 const FPS: f64 = 60.0;
 pub const NAME: &str = "Chip-8 Emulator";
@@ -34,6 +35,23 @@ pub enum Event {
 }
 
 #[derive(Clone)]
+pub struct CoreError {
+	pub message: String,
+}
+
+impl CoreError {
+	pub fn new(message: String) -> Self {
+		Self { message }
+	}
+}
+
+impl fmt::Display for CoreError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{}", self.message)
+	}
+}
+
+#[derive(Clone)]
 pub struct CoreState {
 	pub image: PixelBuf,
 	pub current_frame: u32,
@@ -41,6 +59,7 @@ pub struct CoreState {
 	pub frame_time_with_sleep: Duration,
 	pub fps: f64,
 	pub config: Config,
+	pub error: Option<CoreError>,
 	pub memory: [u8; 4096],
 	///V0-VF
 	pub v_registers: [u8; 16],
@@ -61,6 +80,7 @@ impl CoreState {
 			frame_time_with_sleep: Duration::new(0, 0),
 			fps: 0.0,
 			config: Config::default(),
+			error: None,
 			memory: [0; 4096],
 			v_registers: [0; 16],
 			i_register: 0,
@@ -83,20 +103,29 @@ pub struct Core {
 }
 
 impl Core {
-	pub fn new(
+	pub fn create_and_run(
 		ctx: egui::Context,
-		state_updater: single_value_channel::Updater<CoreState>,
-		events: EventReader<Event, DefaultSettings>,
-	) -> Self {
+	) -> (single_value_channel::Receiver<CoreState>, EventQueue<Event>) {
 		let state = CoreState::new(PixelBuf::new_test_image([BASE_WIDTH, BASE_HEIGHT]));
+		let (state_receiver, state_updater) =
+			single_value_channel::channel_starting_with(state.clone());
 
-		Self {
+		let mut event_sender = EventQueue::<Event>::new();
+		let event_reader = EventReader::new(&mut event_sender);
+
+		let mut core = Self {
 			ctx,
 			state,
 			sleep_error_millis: 0.0,
 			state_updater,
-			events,
-		}
+			events: event_reader,
+		};
+
+		thread::spawn(move || {
+			core.run();
+		});
+
+		(state_receiver, event_sender)
 	}
 
 	pub fn run(&mut self) {
@@ -501,8 +530,15 @@ impl Core {
 	}
 
 	#[inline]
-	fn invalid_opcode(&self, opcode: u16) {
+	fn invalid_opcode(&mut self, opcode: u16) {
 		//TODO Show error in gui but keep running
+		self.state.error = Some(CoreError::new(format!(
+			"Invalid opcode: '{:#X}' at PC: '{:#X}'",
+			opcode,
+			self.state.program_counter - 2
+		)));
+		self.update_gui();
+
 		panic!(
 			"Invalid opcode: '{:#X}' at PC: '{:#X}'",
 			opcode,

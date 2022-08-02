@@ -3,8 +3,7 @@ use crate::core::Event;
 use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
 use pixel_buf::PixelBuf;
-use rc_event_queue::spmc::{EventQueue, EventReader};
-use std::thread;
+use rc_event_queue::spmc::EventQueue;
 
 const FONT_SIZE: f32 = 1.3;
 
@@ -21,17 +20,7 @@ pub struct Gui {
 
 impl Gui {
 	pub fn new(cc: &CreationContext) -> Self {
-		let test_image = PixelBuf::new_test_image([core::BASE_WIDTH, core::BASE_HEIGHT]);
-		let state = core::CoreState::new(test_image);
-		let (state_receiver, state_updater) = single_value_channel::channel_starting_with(state);
-
-		let mut events = EventQueue::<Event>::new();
-		let event_reader = EventReader::new(&mut events);
-
-		let mut updater = core::Core::new(cc.egui_ctx.clone(), state_updater, event_reader);
-		thread::spawn(move || {
-			updater.run();
-		});
+		let (state_receiver, events) = core::Core::create_and_run(cc.egui_ctx.clone());
 
 		Gui {
 			dark_mode: cc.integration_info.prefer_dark_mode.unwrap_or(true),
@@ -170,6 +159,14 @@ impl Gui {
 
 		self.show_options = show_options;
 	}
+
+	fn check_core_error(&mut self) {
+		let state = self.state_receiver.latest();
+
+		if let Some(error) = &state.error {
+			println!("Core error: {}", error);
+		}
+	}
 }
 
 impl eframe::App for Gui {
@@ -186,5 +183,7 @@ impl eframe::App for Gui {
 		self.add_game_screen(ctx);
 
 		self.add_options_window(ctx, frame);
+
+		self.check_core_error();
 	}
 }
