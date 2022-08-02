@@ -160,11 +160,17 @@ impl Gui {
 		self.show_options = show_options;
 	}
 
-	fn check_core_error(&mut self) {
+	fn check_core_error(&mut self, ctx: &Context) {
 		let state = self.state_receiver.latest();
 
 		if let Some(error) = &state.error {
+			//TODO show error in window
 			println!("Core error: {}", error);
+
+			//Create new core
+			let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
+			self.state_receiver = state_receiver;
+			self.events = events;
 		}
 	}
 }
@@ -184,6 +190,6 @@ impl eframe::App for Gui {
 
 		self.add_options_window(ctx, frame);
 
-		self.check_core_error();
+		self.check_core_error(ctx);
 	}
 }

@@ -165,6 +165,10 @@ impl Core {
 				self.state.frame_time_with_sleep = Duration::new(0, 0);
 				self.state.fps = 0.0;
 			}
+
+			if self.state.error.is_some() {
+				break;
+			}
 		}
 	}
 
@@ -531,28 +535,25 @@ impl Core {
 
 	#[inline]
 	fn invalid_opcode(&mut self, opcode: u16) {
-		//TODO Show error in gui but keep running
-		self.state.error = Some(CoreError::new(format!(
+		self.core_error(CoreError::new(format!(
 			"Invalid opcode: '{:#X}' at PC: '{:#X}'",
 			opcode,
 			self.state.program_counter - 2
 		)));
-		self.update_gui();
-
-		panic!(
-			"Invalid opcode: '{:#X}' at PC: '{:#X}'",
-			opcode,
-			self.state.program_counter - 2
-		);
 	}
 
 	#[inline]
-	fn invalid_return(&self) {
-		//TODO Show error in gui but keep running
-		panic!(
+	fn invalid_return(&mut self) {
+		self.core_error(CoreError::new(format!(
 			"Invalid return at PC: '{:#X}'",
 			self.state.program_counter - 2
-		);
+		)));
+	}
+
+	#[inline]
+	fn core_error(&mut self, error: CoreError) {
+		self.state.error = Some(error);
+		self.update_gui();
 	}
 
 	#[inline]
