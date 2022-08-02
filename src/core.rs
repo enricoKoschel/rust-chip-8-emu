@@ -145,10 +145,15 @@ impl Core {
 	}
 
 	fn handle_events(&mut self) {
+		let mut update_gui = false;
+
 		while let Some(event) = self.events.iter().next() {
 			match event {
 				Event::ChangeRunning(running) => {
 					self.state.config.running = *running;
+
+					//Update GUI to accurately display running state
+					update_gui = true;
 				}
 				Event::StepFrame => {
 					self.state.config.step_frame = true;
@@ -156,7 +161,10 @@ impl Core {
 			}
 		}
 
-		self.update_gui();
+		//Only update GUI when necessary to not waste CPU time
+		if update_gui {
+			self.update_gui();
+		}
 	}
 
 	fn limit_speed(&mut self, desired_fps: f64, elapsed_millis: f64) {
