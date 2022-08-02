@@ -132,6 +132,8 @@ impl Gui {
 					self.resize_to_scale(frame);
 				}
 
+				ui.separator();
+
 				let state = self.state_receiver.latest();
 
 				let mut running = state.config.running;
@@ -145,17 +147,25 @@ impl Gui {
 					}
 				});
 
-				ui.label(format!("Current frame: {}", state.current_frame));
+				ui.separator();
+
+				ui.label(format!("Current frame (core): {}", state.current_frame));
 
 				ui.label(format!(
-					"Actual frame time: {:.3}ms",
+					"Actual frame time (core): {:.3}ms",
 					state.actual_frame_time.as_secs_f64() * 1000.0
 				));
 				ui.label(format!(
-					"Frame time with sleep: {:.3}ms",
+					"Frame time with sleep (core): {:.3}ms",
 					state.frame_time_with_sleep.as_secs_f64() * 1000.0
 				));
-				ui.label(format!("FPS: {:.3}", state.fps));
+				ui.label(format!("FPS (core): {:.3}", state.fps));
+
+				ui.separator();
+
+				let gui_millis = ctx.input().unstable_dt * 1000.0;
+				ui.label(format!("Frame time (GUI): {:.3}ms", gui_millis));
+				ui.label(format!("FPS (GUI): {:.3}", 1000.0 / gui_millis));
 			});
 
 		self.show_options = show_options;
