@@ -574,8 +574,8 @@ impl Core {
 
 	#[inline]
 	fn read_16bit_immediate(&mut self) -> u16 {
-		let lo = self.read_8bit_immediate();
 		let hi = self.read_8bit_immediate();
+		let lo = self.read_8bit_immediate();
 		(hi as u16) << 8 | lo as u16
 	}
 }
