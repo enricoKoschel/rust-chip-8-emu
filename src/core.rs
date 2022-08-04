@@ -9,8 +9,8 @@ const FPS: f64 = 60.0;
 pub const NAME: &str = "Chip-8 Emulator";
 pub const BASE_WIDTH: usize = 80;
 pub const BASE_HEIGHT: usize = 40;
-pub const INITIAL_SCALE: usize = 10;
-pub const MAX_SCALE: usize = 20;
+pub const INITIAL_SCALE: f32 = 10.0;
+pub const MAX_SCALE: f32 = 40.0;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Config {

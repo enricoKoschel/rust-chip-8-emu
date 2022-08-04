@@ -9,11 +9,12 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-eframe = "0.18.0"
-egui_extras = "0.18.0"
+egui = { git = "https://github.com/emilk/egui", rev = "e3f993d7b4abc2d9001a45eb6e6b26d3a6ae0388"}
+eframe = { git = "https://github.com/emilk/egui", rev = "e3f993d7b4abc2d9001a45eb6e6b26d3a6ae0388"}
+egui_extras = { git = "https://github.com/emilk/egui", rev = "e3f993d7b4abc2d9001a45eb6e6b26d3a6ae0388"}
 winit = "0.27.1"
 spin_sleep = "1.1.1"
 single_value_channel = "1.2.2"
 rc_event_queue = "0.4.2"
-pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/", rev = "add48a0b594b4623c45e8a977bfdab6b2b66f271" }
+pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/", rev = "980bb342ad5895bd4ac2adce388ba08b32abd1dc" }
 rand = "0.8.5"

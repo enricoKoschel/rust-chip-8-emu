@@ -18,8 +18,8 @@ fn main() {
 	};
 
 	let initial_window_size = egui::Vec2::new(
-		(core::BASE_WIDTH * core::INITIAL_SCALE) as f32,
-		(core::BASE_HEIGHT * core::INITIAL_SCALE) as f32,
+		core::BASE_WIDTH as f32 * core::INITIAL_SCALE,
+		core::BASE_HEIGHT as f32 * core::INITIAL_SCALE,
 	);
 
 	let screen_center = egui::Pos2::new(

@@ -8,10 +8,11 @@ use rc_event_queue::spmc::EventQueue;
 const FONT_SIZE: f32 = 1.3;
 
 pub struct Gui {
-	dark_mode: bool,
+	theme: eframe::Theme,
 	first_frame: bool,
 	show_options: bool,
-	scale: usize,
+	scale: f32,
+	transparent_frame: egui::containers::Frame,
 	frame_no_margin: egui::containers::Frame,
 	menu_bar_height: f32,
 	state_receiver: single_value_channel::Receiver<core::CoreState>,
@@ -22,11 +23,17 @@ impl Gui {
 	pub fn new(cc: &CreationContext) -> Self {
 		let (state_receiver, events) = core::Core::create_and_run(cc.egui_ctx.clone());
 
+		let theme = cc
+			.integration_info
+			.system_theme
+			.unwrap_or(eframe::Theme::Dark);
+
 		Gui {
-			dark_mode: cc.integration_info.prefer_dark_mode.unwrap_or(true),
+			theme,
 			first_frame: true,
 			show_options: false,
 			scale: core::INITIAL_SCALE,
+			transparent_frame: egui::containers::Frame::default(),
 			frame_no_margin: egui::containers::Frame::default(),
 			menu_bar_height: 0.0,
 			state_receiver,
@@ -35,11 +42,27 @@ impl Gui {
 	}
 
 	fn setup(&mut self, ctx: &Context, frame: &mut Frame) {
-		if self.dark_mode {
-			ctx.set_visuals(egui::Visuals::dark());
-		} else {
-			ctx.set_visuals(egui::Visuals::light());
+		match self.theme {
+			eframe::Theme::Dark => {
+				ctx.set_visuals(egui::Visuals::dark());
+			}
+			eframe::Theme::Light => {
+				ctx.set_visuals(egui::Visuals::light());
+			}
 		}
+
+		self.transparent_frame = {
+			let mut transparent_frame = egui::Frame::window(&ctx.style());
+			let fill = egui::Color32::from_rgba_unmultiplied(
+				transparent_frame.fill.r(),
+				transparent_frame.fill.g(),
+				transparent_frame.fill.b(),
+				230,
+			);
+			transparent_frame.fill = fill;
+
+			transparent_frame
+		};
 
 		self.frame_no_margin = egui::Frame::window(&ctx.style()).inner_margin(0.0);
 
@@ -61,12 +84,14 @@ impl Gui {
 	}
 
 	fn resize_to_scale(&mut self, frame: &mut Frame) {
-		let scale = self.scale;
-		let scaled_size = self.latest_frame().get_scaled_size(scale);
+		let scaled_size = {
+			let scale = self.scale;
+			self.latest_frame().get_scaled_size(scale)
+		};
 
 		frame.set_window_size(egui::Vec2::new(
-			scaled_size[0] as f32,
-			scaled_size[1] as f32 + self.menu_bar_height,
+			scaled_size[0],
+			scaled_size[1] + self.menu_bar_height,
 		));
 	}
 
@@ -77,6 +102,8 @@ impl Gui {
 					if ui.checkbox(&mut self.show_options, "Options").clicked() {
 						ui.close_menu();
 					}
+
+					ui.separator();
 
 					if ui.button("Close").clicked() {
 						frame.quit();
@@ -90,21 +117,20 @@ impl Gui {
 
 	fn add_game_screen(&mut self, ctx: &Context) {
 		let image = {
-			let scale = self.scale;
-
-			let size = self.latest_frame().get_scaled_size(scale);
-			let buf = self.latest_frame().get_scaled_buf(scale);
+			let size = self.latest_frame().get_size();
+			let buf = self.latest_frame().get_buf();
 
 			egui_extras::RetainedImage::from_color_image(
 				"game_image",
 				egui::ColorImage::from_rgba_unmultiplied(size, &buf),
 			)
+			.with_texture_filter(egui::TextureFilter::Nearest)
 		};
 
 		egui::CentralPanel::default()
 			.frame(self.frame_no_margin)
 			.show(ctx, |ui| {
-				image.show(ui);
+				image.show_scaled(ui, self.scale);
 			});
 	}
 
@@ -112,12 +138,12 @@ impl Gui {
 		let mut show_options = self.show_options;
 		egui::Window::new("Options")
 			.open(&mut show_options)
+			.frame(self.transparent_frame)
 			.show(ctx, |ui| {
-				let old_scale = self.scale;
+				let scale_slider =
+					ui.add(egui::Slider::new(&mut self.scale, 1.0..=core::MAX_SCALE).text("Scale"));
 
-				ui.add(egui::Slider::new(&mut self.scale, 1..=core::MAX_SCALE).text("Scale"));
-
-				if old_scale != self.scale {
+				if scale_slider.changed() {
 					self.resize_to_scale(frame);
 				}
 
