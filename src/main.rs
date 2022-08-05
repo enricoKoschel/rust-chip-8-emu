@@ -17,9 +17,12 @@ fn main() {
 		(size.width as f32, size.height as f32)
 	};
 
+	let max_scale = (screen_width / core::BASE_WIDTH as f32).round();
+	let scale = (max_scale / 1.4).round();
+
 	let initial_window_size = egui::Vec2::new(
-		core::BASE_WIDTH as f32 * core::INITIAL_SCALE,
-		core::BASE_HEIGHT as f32 * core::INITIAL_SCALE,
+		core::BASE_WIDTH as f32 * scale,
+		core::BASE_HEIGHT as f32 * scale,
 	);
 
 	let screen_center = egui::Pos2::new(
@@ -39,11 +42,9 @@ fn main() {
 		..Default::default()
 	};
 
-	//TODO Set initial scale according to the screen size
-
 	eframe::run_native(
 		core::NAME,
 		options,
-		Box::new(|cc| Box::new(gui::Gui::new(cc))),
+		Box::new(move |cc| Box::new(gui::Gui::new(cc, scale, max_scale))),
 	);
 }

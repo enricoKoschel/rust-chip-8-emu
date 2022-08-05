@@ -14,6 +14,7 @@ pub struct Gui {
 	show_options_window: bool,
 	show_info_window: bool,
 	scale: f32,
+	max_scale: f32,
 	transparent_frame: egui::containers::Frame,
 	frame_no_margin: egui::containers::Frame,
 	menu_bar_height: f32,
@@ -22,7 +23,7 @@ pub struct Gui {
 }
 
 impl Gui {
-	pub fn new(cc: &CreationContext) -> Self {
+	pub fn new(cc: &CreationContext, scale: f32, max_scale: f32) -> Self {
 		let (state_receiver, events) = core::Core::create_and_run(cc.egui_ctx.clone());
 
 		let theme = cc
@@ -36,7 +37,8 @@ impl Gui {
 			show_rom_window: false,
 			show_options_window: false,
 			show_info_window: false,
-			scale: core::INITIAL_SCALE,
+			scale,
+			max_scale,
 			transparent_frame: egui::containers::Frame::default(),
 			frame_no_margin: egui::containers::Frame::default(),
 			menu_bar_height: 0.0,
@@ -149,7 +151,7 @@ impl Gui {
 			.frame(self.transparent_frame)
 			.show(ctx, |ui| {
 				let scale_slider =
-					ui.add(egui::Slider::new(&mut self.scale, 1.0..=core::MAX_SCALE).text("Scale"));
+					ui.add(egui::Slider::new(&mut self.scale, 1.0..=self.max_scale).text("Scale"));
 
 				if scale_slider.changed() {
 					self.resize_to_scale(frame);
