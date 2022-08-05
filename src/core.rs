@@ -300,8 +300,8 @@ impl Core {
 
 	fn load_game(&mut self) {
 		//TODO Get rom path from GUI
-		//let path = "roms/demos/Trip8 Demo (2008) [Revival Studios].ch8";
-		let path = "roms/games/Pong (1 player).ch8";
+		let path = "roms/demos/Trip8 Demo (2008) [Revival Studios].ch8";
+		//let path = "roms/games/Pong (1 player).ch8";
 		let rom = fs::read(path).unwrap();
 
 		//The lower 512 bytes were reserved for the interpreter on original hardware
@@ -662,7 +662,6 @@ impl Core {
 		//Each row is read starting from memory location I; The value of I does not change after the execution of this instruction.
 		//VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen
 
-		//FIXME Does not work correctly
 		let (x, y, height) = {
 			let x = (opcode & 0x0F00) >> 8;
 			let y = (opcode & 0x00F0) >> 4;
@@ -677,7 +676,7 @@ impl Core {
 
 		self.state.v_registers[0xF] = 0;
 
-		for row in 0..=height {
+		for row in 0..height {
 			let raw_byte = self.state.memory[self.state.i_register as usize + row as usize];
 
 			for col in 0..=7 {
