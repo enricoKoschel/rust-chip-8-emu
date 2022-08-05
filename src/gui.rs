@@ -10,7 +10,9 @@ const FONT_SIZE: f32 = 1.3;
 pub struct Gui {
 	theme: eframe::Theme,
 	first_frame: bool,
-	show_options: bool,
+	show_rom_window: bool,
+	show_options_window: bool,
+	show_info_window: bool,
 	scale: f32,
 	transparent_frame: egui::containers::Frame,
 	frame_no_margin: egui::containers::Frame,
@@ -31,7 +33,9 @@ impl Gui {
 		Gui {
 			theme,
 			first_frame: true,
-			show_options: false,
+			show_rom_window: false,
+			show_options_window: false,
+			show_info_window: false,
 			scale: core::INITIAL_SCALE,
 			transparent_frame: egui::containers::Frame::default(),
 			frame_no_margin: egui::containers::Frame::default(),
@@ -99,7 +103,18 @@ impl Gui {
 		let top_bottom_panel = egui::TopBottomPanel::top("menubar_container").show(ctx, |ui| {
 			egui::menu::bar(ui, |ui| {
 				ui.menu_button("File", |ui| {
-					if ui.checkbox(&mut self.show_options, "Options").clicked() {
+					if ui.checkbox(&mut self.show_rom_window, "Rom").clicked() {
+						ui.close_menu();
+					}
+
+					if ui
+						.checkbox(&mut self.show_options_window, "Options")
+						.clicked()
+					{
+						ui.close_menu();
+					}
+
+					if ui.checkbox(&mut self.show_info_window, "Info").clicked() {
 						ui.close_menu();
 					}
 
@@ -115,29 +130,22 @@ impl Gui {
 		self.menu_bar_height = top_bottom_panel.response.rect.size().y;
 	}
 
-	fn add_game_screen(&mut self, ctx: &Context) {
-		let image = {
-			let size = self.latest_frame().get_size();
-			let buf = self.latest_frame().get_buf();
-
-			egui_extras::RetainedImage::from_color_image(
-				"game_image",
-				egui::ColorImage::from_rgba_unmultiplied(size, &buf),
-			)
-			.with_texture_filter(egui::TextureFilter::Nearest)
-		};
-
-		egui::CentralPanel::default()
-			.frame(self.frame_no_margin)
+	fn add_rom_window(&mut self, ctx: &Context) {
+		egui::Window::new("Rom")
+			.open(&mut self.show_rom_window)
+			.frame(self.transparent_frame)
 			.show(ctx, |ui| {
-				image.show_scaled(ui, self.scale);
+				let state = self.state_receiver.latest();
+
+				ui.label(format!("Rom name: {}", "Test rom.ch8"));
+				ui.label(format!("Rom size: {}", "3126 bytes"));
 			});
 	}
 
 	fn add_options_window(&mut self, ctx: &Context, frame: &mut Frame) {
-		let mut show_options = self.show_options;
+		let mut show_options_window = self.show_options_window;
 		egui::Window::new("Options")
-			.open(&mut show_options)
+			.open(&mut show_options_window)
 			.frame(self.transparent_frame)
 			.show(ctx, |ui| {
 				let scale_slider =
@@ -149,20 +157,18 @@ impl Gui {
 
 				ui.separator();
 
+				self.add_running_and_step_frame(ui);
+			});
+
+		self.show_options_window = show_options_window;
+	}
+
+	fn add_info_window(&mut self, ctx: &Context) {
+		egui::Window::new("Info")
+			.open(&mut self.show_info_window)
+			.frame(self.transparent_frame)
+			.show(ctx, |ui| {
 				let state = self.state_receiver.latest();
-
-				let mut running = state.config.running;
-				if ui.checkbox(&mut running, "Running").clicked() {
-					self.events.push(Event::ChangeRunning(running));
-				};
-
-				ui.add_enabled_ui(!running, |ui| {
-					if ui.button("Step frame").clicked() {
-						self.events.push(Event::StepFrame);
-					}
-				});
-
-				ui.separator();
 
 				ui.label(format!("Current frame (core): {}", state.current_frame));
 
@@ -182,8 +188,44 @@ impl Gui {
 				ui.label(format!("Frame time (GUI): {:.3}ms", gui_millis));
 				ui.label(format!("FPS (GUI): {:.3}", 1000.0 / gui_millis));
 			});
+	}
 
-		self.show_options = show_options;
+	fn add_game_screen(&mut self, ctx: &Context) {
+		let image = {
+			let size = self.latest_frame().get_size();
+			let buf = self.latest_frame().get_buf();
+
+			egui_extras::RetainedImage::from_color_image(
+				"game_image",
+				egui::ColorImage::from_rgba_unmultiplied(size, &buf),
+			)
+			.with_texture_filter(egui::TextureFilter::Nearest)
+		};
+
+		let central_panel = egui::CentralPanel::default()
+			.frame(self.frame_no_margin)
+			.show(ctx, |ui| {
+				image.show_scaled(ui, self.scale);
+			});
+
+		central_panel.response.context_menu(|ui| {
+			self.add_running_and_step_frame(ui);
+		});
+	}
+
+	fn add_running_and_step_frame(&mut self, ui: &mut egui::Ui) {
+		let state = self.state_receiver.latest();
+
+		let mut running = state.config.running;
+		if ui.checkbox(&mut running, "Running").clicked() {
+			self.events.push(Event::ChangeRunning(running));
+		};
+
+		ui.add_enabled_ui(!running, |ui| {
+			if ui.button("Step frame").clicked() {
+				self.events.push(Event::StepFrame);
+			}
+		});
 	}
 
 	fn check_core_error(&mut self, ctx: &Context) {
@@ -225,7 +267,9 @@ impl eframe::App for Gui {
 
 		self.add_game_screen(ctx);
 
+		self.add_rom_window(ctx);
 		self.add_options_window(ctx, frame);
+		self.add_info_window(ctx);
 
 		self.check_core_error(ctx);
 	}
