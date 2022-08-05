@@ -96,10 +96,30 @@ pub struct CoreState {
 	pub call_stack: Vec<u16>,
 	pub delay_timer: u8,
 	pub sound_timer: u8,
+	pub key_map: std::collections::HashMap<u8, egui::Key>,
 }
 
 impl CoreState {
 	pub fn new(image: PixelBuf) -> Self {
+		//TODO Get keymap from GUI
+		let mut key_map = std::collections::HashMap::new();
+		key_map.insert(0x0, egui::Key::Num0);
+		key_map.insert(0x1, egui::Key::Num1);
+		key_map.insert(0x2, egui::Key::Num2);
+		key_map.insert(0x3, egui::Key::Num3);
+		key_map.insert(0x4, egui::Key::Num4);
+		key_map.insert(0x5, egui::Key::Num5);
+		key_map.insert(0x6, egui::Key::Num6);
+		key_map.insert(0x7, egui::Key::Num7);
+		key_map.insert(0x8, egui::Key::Num8);
+		key_map.insert(0x9, egui::Key::Num9);
+		key_map.insert(0xA, egui::Key::A);
+		key_map.insert(0xB, egui::Key::B);
+		key_map.insert(0xC, egui::Key::C);
+		key_map.insert(0xD, egui::Key::D);
+		key_map.insert(0xE, egui::Key::E);
+		key_map.insert(0xF, egui::Key::F);
+
 		Self {
 			image,
 			current_frame: 0,
@@ -117,6 +137,7 @@ impl CoreState {
 			call_stack: vec![],
 			delay_timer: 0,
 			sound_timer: 0,
+			key_map,
 		}
 	}
 }
@@ -149,7 +170,7 @@ impl Core {
 			events: event_reader,
 		};
 
-		core.load_game();
+		core.initialise();
 
 		thread::spawn(move || {
 			core.run();
@@ -158,9 +179,129 @@ impl Core {
 		(state_receiver, event_sender)
 	}
 
+	fn initialise(&mut self) {
+		self.load_game();
+		self.load_font();
+	}
+
+	fn load_font(&mut self) {
+		//0
+		self.state.memory[0] = 0b01100000;
+		self.state.memory[1] = 0b11010000;
+		self.state.memory[2] = 0b10010000;
+		self.state.memory[3] = 0b10110000;
+		self.state.memory[4] = 0b01100000;
+
+		//1
+		self.state.memory[5] = 0b00100000;
+		self.state.memory[6] = 0b01100000;
+		self.state.memory[7] = 0b00100000;
+		self.state.memory[8] = 0b00100000;
+		self.state.memory[9] = 0b01110000;
+
+		//2
+		self.state.memory[10] = 0b01100000;
+		self.state.memory[11] = 0b10010000;
+		self.state.memory[12] = 0b00100000;
+		self.state.memory[13] = 0b01000000;
+		self.state.memory[14] = 0b11110000;
+
+		//3
+		self.state.memory[15] = 0b01100000;
+		self.state.memory[16] = 0b10010000;
+		self.state.memory[17] = 0b00100000;
+		self.state.memory[18] = 0b10010000;
+		self.state.memory[19] = 0b01100000;
+
+		//4
+		self.state.memory[20] = 0b00100000;
+		self.state.memory[21] = 0b01100000;
+		self.state.memory[22] = 0b10100000;
+		self.state.memory[23] = 0b11110000;
+		self.state.memory[24] = 0b00100000;
+
+		//5
+		self.state.memory[25] = 0b11110000;
+		self.state.memory[26] = 0b10000000;
+		self.state.memory[27] = 0b11100000;
+		self.state.memory[28] = 0b00010000;
+		self.state.memory[29] = 0b11100000;
+
+		//6
+		self.state.memory[30] = 0b01100000;
+		self.state.memory[31] = 0b10000000;
+		self.state.memory[32] = 0b11100000;
+		self.state.memory[33] = 0b10010000;
+		self.state.memory[34] = 0b01100000;
+
+		//7
+		self.state.memory[35] = 0b11110000;
+		self.state.memory[36] = 0b00010000;
+		self.state.memory[37] = 0b00100000;
+		self.state.memory[38] = 0b01000000;
+		self.state.memory[39] = 0b01000000;
+
+		//8
+		self.state.memory[40] = 0b01100000;
+		self.state.memory[41] = 0b10010000;
+		self.state.memory[42] = 0b01100000;
+		self.state.memory[43] = 0b10010000;
+		self.state.memory[44] = 0b01100000;
+
+		//9
+		self.state.memory[45] = 0b01100000;
+		self.state.memory[46] = 0b10010000;
+		self.state.memory[47] = 0b01110000;
+		self.state.memory[48] = 0b00010000;
+		self.state.memory[49] = 0b01100000;
+
+		//A
+		self.state.memory[50] = 0b01100000;
+		self.state.memory[51] = 0b10010000;
+		self.state.memory[52] = 0b11110000;
+		self.state.memory[53] = 0b10010000;
+		self.state.memory[54] = 0b10010000;
+
+		//B
+		self.state.memory[55] = 0b11100000;
+		self.state.memory[56] = 0b10010000;
+		self.state.memory[57] = 0b11100000;
+		self.state.memory[58] = 0b10010000;
+		self.state.memory[59] = 0b11100000;
+
+		//C
+		self.state.memory[60] = 0b01100000;
+		self.state.memory[61] = 0b10000000;
+		self.state.memory[62] = 0b10000000;
+		self.state.memory[63] = 0b10000000;
+		self.state.memory[64] = 0b01100000;
+
+		//D
+		self.state.memory[65] = 0b11100000;
+		self.state.memory[66] = 0b10010000;
+		self.state.memory[67] = 0b10010000;
+		self.state.memory[68] = 0b10010000;
+		self.state.memory[69] = 0b11100000;
+
+		//E
+		self.state.memory[70] = 0b11110000;
+		self.state.memory[71] = 0b10000000;
+		self.state.memory[72] = 0b11100000;
+		self.state.memory[73] = 0b10000000;
+		self.state.memory[74] = 0b11110000;
+
+		//F
+		self.state.memory[75] = 0b11110000;
+		self.state.memory[76] = 0b10000000;
+		self.state.memory[77] = 0b11100000;
+		self.state.memory[78] = 0b10000000;
+		self.state.memory[79] = 0b10000000;
+	}
+
 	fn load_game(&mut self) {
 		//TODO Get rom path from GUI
-		let path = "roms/demos/Trip8 Demo (2008) [Revival Studios].ch8";
+		//let path = "roms/demos/Trip8 Demo (2008) [Revival Studios].ch8";
+		let path = "roms/games/Pong (1 player).ch8";
 		let rom = fs::read(path).unwrap();
 
 		//The lower 512 bytes were reserved for the interpreter on original hardware
@@ -520,6 +661,8 @@ impl Core {
 		//0xDXYN: Draw a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
 		//Each row is read starting from memory location I; The value of I does not change after the execution of this instruction.
 		//VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen
+
+		//FIXME Does not work correctly
 		let (x, y, height) = {
 			let x = (opcode & 0x0F00) >> 8;
 			let y = (opcode & 0x00F0) >> 4;
@@ -567,11 +710,17 @@ impl Core {
 		match lower_byte {
 			0x9E => {
 				//0xEX9E: Skip next instruction if the key stored in VX is pressed.
-				todo!();
+				let key = self.state.v_registers[x as usize];
+				if self.is_key_down(key) {
+					self.skip_opcode();
+				}
 			}
 			0xA1 => {
 				//0xEXA1: Skip next instruction if the key stored in VX isn't pressed.
-				todo!();
+				let key = self.state.v_registers[x as usize];
+				if !self.is_key_down(key) {
+					self.skip_opcode();
+				}
 			}
 			_ => self.core_error(ErrorKind::InvalidOpcode {
 				opcode,
@@ -591,7 +740,8 @@ impl Core {
 			}
 			0x0A => {
 				//0xFX0A: Wait for a key press, then store the value of the key in VX.
-				todo!();
+				let key = self.wait_for_key_press();
+				self.state.v_registers[x as usize] = key;
 			}
 			0x15 => {
 				//0xFX15: Set the delay timer to VX.
@@ -607,7 +757,8 @@ impl Core {
 			}
 			0x29 => {
 				//0xFX29: Set I to the location of the sprite for the character in VX.
-				todo!();
+				//Characters 0-F (in hexadecimal) are represented by a 4x5 font.
+				self.state.i_register = self.state.v_registers[x as usize] as u16 * 5;
 			}
 			0x33 => {
 				//0xFX33: Store the Binary-coded decimal representation of VX at the addresses I, I+1, and I+2.
@@ -639,6 +790,25 @@ impl Core {
 				opcode,
 				address: self.state.program_counter - 2,
 			}),
+		}
+	}
+
+	fn wait_for_key_press(&self) -> u8 {
+		loop {
+			for key in 0..=0xF {
+				if self.is_key_down(key) {
+					return key;
+				}
+			}
+		}
+	}
+
+	fn is_key_down(&self, key: u8) -> bool {
+		if let Some(key_value) = self.state.key_map.get_key_value(&key) {
+			self.ctx.input().keys_down.contains(key_value.1)
+		} else {
+			//Maybe error instead of returning false?
+			false
 		}
 	}
 
