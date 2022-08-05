@@ -2,6 +2,7 @@ use eframe::egui;
 use pixel_buf::{PixelBuf, Rgba};
 use rc_event_queue::spmc::{DefaultSettings, EventQueue, EventReader};
 use rc_event_queue::LendingIterator;
+use std::path::PathBuf;
 use std::time::Duration;
 use std::{fmt, fs, thread};
 
@@ -42,9 +43,13 @@ pub enum ErrorKind {
 		address: u16,
 	},
 	RomTooLarge {
-		name: String,
+		path: PathBuf,
 		size: usize,
 		allowed: usize,
+	},
+	InvalidRom {
+		path: PathBuf,
+		specific_error: String,
 	},
 }
 
@@ -62,14 +67,27 @@ impl fmt::Display for ErrorKind {
 				write!(f, "Invalid return at PC: '{:#06X}'", address)
 			}
 			ErrorKind::RomTooLarge {
-				name,
+				path,
 				size,
 				allowed,
 			} => {
 				write!(
 					f,
 					"ROM '{}' is too large: '{}' bytes, allowed: '{}' bytes",
-					name, size, allowed
+					path.to_string_lossy(),
+					size,
+					allowed
+				)
+			}
+			ErrorKind::InvalidRom {
+				path,
+				specific_error,
+			} => {
+				write!(
+					f,
+					"Invalid ROM '{}': '{}'",
+					path.to_string_lossy(),
+					specific_error
 				)
 			}
 		}
@@ -95,6 +113,8 @@ pub struct CoreState {
 	pub delay_timer: u8,
 	pub sound_timer: u8,
 	pub key_map: std::collections::HashMap<u8, egui::Key>,
+	pub rom_name: Option<String>,
+	pub rom_size: Option<usize>,
 }
 
 impl CoreState {
@@ -136,6 +156,8 @@ impl CoreState {
 			delay_timer: 0,
 			sound_timer: 0,
 			key_map,
+			rom_name: None,
+			rom_size: None,
 		}
 	}
 }
@@ -178,7 +200,11 @@ impl Core {
 	}
 
 	fn initialise(&mut self) {
-		self.load_game();
+		let path = "roms/demos/Trip8 Demo (2008) [Revival Studios].ch8";
+		//let path = "roms/games/Pong (1 player).ch8";
+
+		//TODO call load_game from GUI
+		self.load_game(PathBuf::from(path));
 		self.load_font();
 	}
 
@@ -296,16 +322,30 @@ impl Core {
 		self.state.memory[79] = 0b10000000;
 	}
 
-	fn load_game(&mut self) {
-		//TODO Get rom path from GUI
-		let path = "roms/demos/Trip8 Demo (2008) [Revival Studios].ch8";
-		//let path = "roms/games/Pong (1 player).ch8";
-		let rom = fs::read(path).unwrap();
+	fn load_game(&mut self, path: PathBuf) {
+		let rom = match fs::read(&path) {
+			Ok(rom) => rom,
+			Err(e) => {
+				self.core_error(ErrorKind::InvalidRom {
+					path,
+					specific_error: e.to_string(),
+				});
+				return;
+			}
+		};
+
+		self.state.rom_name = Some(
+			path.file_name()
+				.expect("Should not fail if file could be opened above")
+				.to_string_lossy()
+				.to_string(),
+		);
+		self.state.rom_size = Some(rom.len());
 
 		//The lower 512 bytes were reserved for the interpreter on original hardware
 		if rom.len() > 4096 - 512 {
 			self.core_error(ErrorKind::RomTooLarge {
-				name: path.to_string(),
+				path,
 				size: rom.len(),
 				allowed: 4096 - 512,
 			});
@@ -316,6 +356,10 @@ impl Core {
 
 	pub fn run(&mut self) {
 		loop {
+			if self.state.error.is_some() {
+				return;
+			}
+
 			let start_of_frame = std::time::Instant::now();
 
 			self.handle_events();

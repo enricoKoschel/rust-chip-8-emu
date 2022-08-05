@@ -139,8 +139,21 @@ impl Gui {
 			.show(ctx, |ui| {
 				let state = self.state_receiver.latest();
 
-				ui.label(format!("Rom name: {}", "Test rom.ch8"));
-				ui.label(format!("Rom size: {}", "3126 bytes"));
+				let rom_name = state.rom_name.clone().unwrap_or_else(|| "---".into());
+				let rom_size = {
+					let rom_size = state.rom_size.unwrap_or(0);
+
+					if rom_size == 0 {
+						"---".into()
+					} else if rom_size == 1 {
+						"1 byte".into()
+					} else {
+						format!("{} bytes", rom_size)
+					}
+				};
+
+				ui.label(format!("Rom name: {}", rom_name));
+				ui.label(format!("Rom size: {}", rom_size));
 			});
 	}
 

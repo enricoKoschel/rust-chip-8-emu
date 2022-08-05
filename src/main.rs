@@ -31,7 +31,6 @@ fn main() {
 	);
 
 	let options = eframe::NativeOptions {
-		//TODO allow resizing while keeping the aspect ratio
 		resizable: false,
 		initial_window_pos: Some(screen_center),
 		initial_window_size: Some(initial_window_size),
