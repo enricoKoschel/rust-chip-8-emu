@@ -190,13 +190,24 @@ impl Gui {
 		let state = self.state_receiver.latest();
 
 		if let Some(error) = &state.error {
-			//TODO show error in window
-			println!("[ERROR] {}", error);
+			let mut acknowledged = false;
 
-			//Create new core
-			let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
-			self.state_receiver = state_receiver;
-			self.events = events;
+			egui::Window::new("Error")
+				.frame(self.transparent_frame)
+				.show(ctx, |ui| {
+					ui.colored_label(ui.visuals().error_fg_color, error.to_string());
+
+					if ui.button("Ok").clicked() {
+						acknowledged = true;
+					}
+				});
+
+			if acknowledged {
+				//Create new core
+				let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
+				self.state_receiver = state_receiver;
+				self.events = events;
+			}
 		}
 	}
 }

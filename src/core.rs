@@ -329,6 +329,10 @@ impl Core {
 				self.state.config.step_frame = false;
 
 				self.step_frame();
+				if self.state.error.is_some() {
+					return;
+				}
+
 				self.update_gui();
 
 				self.state.current_frame += 1;
@@ -352,10 +356,6 @@ impl Core {
 				self.state.actual_frame_time = Duration::new(0, 0);
 				self.state.frame_time_with_sleep = Duration::new(0, 0);
 				self.state.fps = 0.0;
-			}
-
-			if self.state.error.is_some() {
-				break;
 			}
 		}
 	}
@@ -404,6 +404,10 @@ impl Core {
 	fn step_frame(&mut self) {
 		for _ in 0..20 {
 			self.execute_opcode();
+
+			if self.state.error.is_some() {
+				return;
+			}
 		}
 		self.update_timers();
 	}
