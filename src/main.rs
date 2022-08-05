@@ -39,6 +39,8 @@ fn main() {
 		..Default::default()
 	};
 
+	//TODO Set initial scale according to the screen size
+
 	eframe::run_native(
 		core::NAME,
 		options,
