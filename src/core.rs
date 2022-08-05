@@ -447,7 +447,7 @@ impl Core {
 	fn execute_opcode_0(&mut self, opcode: u16) {
 		match opcode {
 			0x00E0 => {
-				self.state.image.clear(Rgba::black());
+				self.state.image.clear(Rgba::BLACK);
 			}
 			0x00EE => {
 				//0x00EE: Return from a subroutine
@@ -683,15 +683,15 @@ impl Core {
 				let x = (x + col) as usize;
 				let y = (y + row) as usize;
 				let pixel_value = (raw_byte >> (7 - col)) & 0x1;
-				let old_pixel_value = if self.state.image[(x, y)] == Rgba::white() {
+				let old_pixel_value = if self.state.image[(x, y)] == Rgba::WHITE {
 					1
 				} else {
 					0
 				};
 				self.state.image[(x, y)] = if (pixel_value ^ old_pixel_value) == 1 {
-					Rgba::white()
+					Rgba::WHITE
 				} else {
-					Rgba::black()
+					Rgba::BLACK
 				};
 
 				//Set VF to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen
