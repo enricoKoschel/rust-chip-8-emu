@@ -15,6 +15,7 @@ egui_extras = { git = "https://github.com/emilk/egui", rev = "e3f993d7b4abc2d900
 winit = "0.27.1"
 spin_sleep = "1.1.1"
 single_value_channel = "1.2.2"
-rc_event_queue = "0.4.2"
+crossbeam-channel = "0.5.6"
 pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/", rev = "93a45981f449cea77de6e38d655facd334771bfc" }
 rand = "0.8.5"
+rfd = "0.10.0"

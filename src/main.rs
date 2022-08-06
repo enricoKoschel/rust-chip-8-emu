@@ -7,7 +7,10 @@ mod gui;
 use eframe::egui;
 
 fn main() {
+	//TODO Add logging
+
 	let (screen_width, screen_height) = {
+		//TODO dont unwrap, propagate error through to initial_window_pos and size
 		let size = winit::event_loop::EventLoop::new()
 			.available_monitors()
 			.next()

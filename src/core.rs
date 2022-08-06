@@ -1,7 +1,5 @@
 use eframe::egui;
 use pixel_buf::{PixelBuf, Rgba};
-use rc_event_queue::spmc::{DefaultSettings, EventQueue, EventReader};
-use rc_event_queue::LendingIterator;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::{fmt, fs, thread};
@@ -31,6 +29,7 @@ impl Default for Config {
 pub enum Event {
 	ChangeRunning(bool),
 	StepFrame,
+	LoadRom(PathBuf),
 }
 
 #[derive(Clone)]
@@ -167,27 +166,29 @@ pub struct Core {
 	state: CoreState,
 	sleep_error_millis: f64,
 	state_updater: single_value_channel::Updater<CoreState>,
-	events: EventReader<Event, DefaultSettings>,
+	events: crossbeam_channel::Receiver<Event>,
 }
 
 impl Core {
 	pub fn create_and_run(
 		ctx: egui::Context,
-	) -> (single_value_channel::Receiver<CoreState>, EventQueue<Event>) {
+	) -> (
+		single_value_channel::Receiver<CoreState>,
+		crossbeam_channel::Sender<Event>,
+	) {
 		//TODO have better starting screen
 		let state = CoreState::new(PixelBuf::new([BASE_WIDTH, BASE_HEIGHT]));
 		let (state_receiver, state_updater) =
 			single_value_channel::channel_starting_with(state.clone());
 
-		let mut event_sender = EventQueue::<Event>::new();
-		let event_reader = EventReader::new(&mut event_sender);
+		let (event_sender, event_receiver) = crossbeam_channel::unbounded();
 
 		let mut core = Self {
 			ctx,
 			state,
 			sleep_error_millis: 0.0,
 			state_updater,
-			events: event_reader,
+			events: event_receiver,
 		};
 
 		core.initialise();
@@ -200,11 +201,6 @@ impl Core {
 	}
 
 	fn initialise(&mut self) {
-		let path = "roms/demos/Trip8 Demo (2008) [Revival Studios].ch8";
-		//let path = "roms/games/Pong (1 player).ch8";
-
-		//TODO call load_game from GUI
-		self.load_game(PathBuf::from(path));
 		self.load_font();
 	}
 
@@ -403,24 +399,26 @@ impl Core {
 	}
 
 	fn handle_events(&mut self) {
-		let mut update_gui = false;
+		let mut event_handled = false;
 
-		while let Some(event) = self.events.iter().next() {
+		while let Ok(event) = self.events.try_recv() {
 			match event {
 				Event::ChangeRunning(running) => {
-					self.state.config.running = *running;
-
-					//Update GUI to accurately display running state
-					update_gui = true;
+					self.state.config.running = running;
 				}
 				Event::StepFrame => {
 					self.state.config.step_frame = true;
 				}
+				Event::LoadRom(path) => {
+					self.load_game(path);
+				}
 			}
+
+			event_handled = true;
 		}
 
-		//Only update GUI when necessary to not waste CPU time
-		if update_gui {
+		//Only update GUI if an event was handled to lower CPU usage
+		if event_handled {
 			self.update_gui();
 		}
 	}

@@ -3,7 +3,6 @@ use crate::core::Event;
 use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
 use pixel_buf::PixelBuf;
-use rc_event_queue::spmc::EventQueue;
 
 const FONT_SIZE: f32 = 1.3;
 
@@ -19,7 +18,7 @@ pub struct Gui {
 	frame_no_margin: egui::containers::Frame,
 	menu_bar_height: f32,
 	state_receiver: single_value_channel::Receiver<core::CoreState>,
-	events: EventQueue<Event>,
+	events: crossbeam_channel::Sender<Event>,
 }
 
 impl Gui {
@@ -133,8 +132,9 @@ impl Gui {
 	}
 
 	fn add_rom_window(&mut self, ctx: &Context) {
+		let mut show_rom_window = self.show_rom_window;
 		egui::Window::new("Rom")
-			.open(&mut self.show_rom_window)
+			.open(&mut show_rom_window)
 			.frame(self.transparent_frame)
 			.show(ctx, |ui| {
 				let state = self.state_receiver.latest();
@@ -154,7 +154,23 @@ impl Gui {
 
 				ui.label(format!("Rom name: {}", rom_name));
 				ui.label(format!("Rom size: {}", rom_size));
+
+				if ui.button("Load").clicked() {
+					//TODO Implement picking ROM from file dialog
+					//TODO Implement dragging the ROM onto the gui
+					rfd::FileDialog::new()
+						.add_filter("CH8 files", &["ch8"])
+						.pick_file();
+
+					println!("Picked");
+
+					self.send_event(Event::LoadRom(std::path::PathBuf::from(
+						"roms/demos/Trip8 Demo (2008) [Revival Studios].ch8",
+					)));
+				}
 			});
+
+		self.show_rom_window = show_rom_window;
 	}
 
 	fn add_options_window(&mut self, ctx: &Context, frame: &mut Frame) {
@@ -233,12 +249,12 @@ impl Gui {
 
 		let mut running = state.config.running;
 		if ui.checkbox(&mut running, "Running").clicked() {
-			self.events.push(Event::ChangeRunning(running));
+			self.send_event(Event::ChangeRunning(running));
 		};
 
 		ui.add_enabled_ui(!running, |ui| {
 			if ui.button("Step frame").clicked() {
-				self.events.push(Event::StepFrame);
+				self.send_event(Event::StepFrame);
 			}
 		});
 	}
@@ -264,6 +280,21 @@ impl Gui {
 				let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
 				self.state_receiver = state_receiver;
 				self.events = events;
+			}
+		}
+	}
+
+	fn send_event(&mut self, event: Event) {
+		match self.events.send(event) {
+			Ok(_) => {}
+			Err(e) => {
+				if self.state_receiver.latest().error.is_some() {
+					//If the core already reported an error, it will be caught sometime this frame and handled.
+					//That means this error can be ignored.
+					return;
+				}
+
+				panic!("{}", e);
 			}
 		}
 	}
