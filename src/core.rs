@@ -13,6 +13,7 @@ pub enum Event {
 	ChangeRunning(bool),
 	StepFrame,
 	LoadRom(PathBuf),
+	ChangeOpcodesPerFrame(u32),
 }
 
 #[derive(Clone)]
@@ -98,6 +99,7 @@ pub struct CoreState {
 	pub key_map: std::collections::HashMap<u8, egui::Key>,
 	pub rom_name: Option<String>,
 	pub rom_size: Option<usize>,
+	pub opcodes_per_frame: u32,
 }
 
 impl CoreState {
@@ -142,6 +144,7 @@ impl CoreState {
 			key_map,
 			rom_name: None,
 			rom_size: None,
+			opcodes_per_frame: 20,
 		}
 	}
 }
@@ -397,6 +400,9 @@ impl Core {
 				Event::LoadRom(path) => {
 					self.load_game(path);
 				}
+				Event::ChangeOpcodesPerFrame(opcodes_per_frame) => {
+					self.state.opcodes_per_frame = opcodes_per_frame;
+				}
 			}
 
 			event_handled = true;
@@ -427,7 +433,7 @@ impl Core {
 	}
 
 	fn step_frame(&mut self) {
-		for _ in 0..20 {
+		for _ in 0..self.state.opcodes_per_frame {
 			self.execute_opcode();
 
 			if self.state.error.is_some() {

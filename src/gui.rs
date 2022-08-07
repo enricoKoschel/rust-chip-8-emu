@@ -245,7 +245,15 @@ impl Gui {
 	}
 
 	fn add_running_and_step_frame(&mut self, ui: &mut egui::Ui) {
-		let state = self.state_receiver.latest();
+		let state = self.state_receiver.latest().clone();
+
+		let mut opcodes_per_frame = state.opcodes_per_frame;
+		if ui
+			.add(egui::Slider::new(&mut opcodes_per_frame, 1..=100).text("Opcodes per frame"))
+			.changed()
+		{
+			self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
+		}
 
 		let mut running = state.running;
 		if ui.checkbox(&mut running, "Running").clicked() {
@@ -259,7 +267,6 @@ impl Gui {
 		});
 
 		//TODO Add step opcode button
-		//TODO Add opcodes per frame slider
 	}
 
 	fn check_core_error(&mut self, ctx: &Context) {
