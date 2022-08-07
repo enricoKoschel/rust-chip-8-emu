@@ -9,23 +9,6 @@ pub const NAME: &str = "Chip-8 Emulator";
 pub const BASE_WIDTH: usize = 80;
 pub const BASE_HEIGHT: usize = 40;
 
-#[derive(Clone, PartialEq, Debug)]
-pub struct Config {
-	pub running: bool,
-	pub step_frame: bool,
-}
-
-//Implementation may be expanded in the future to include non derivable defaults
-#[allow(clippy::derivable_impls)]
-impl Default for Config {
-	fn default() -> Self {
-		Self {
-			running: false,
-			step_frame: false,
-		}
-	}
-}
-
 pub enum Event {
 	ChangeRunning(bool),
 	StepFrame,
@@ -100,7 +83,8 @@ pub struct CoreState {
 	pub actual_frame_time: Duration,
 	pub frame_time_with_sleep: Duration,
 	pub fps: f64,
-	pub config: Config,
+	pub running: bool,
+	pub step_frame: bool,
 	pub error: Option<ErrorKind>,
 	pub memory: [u8; 4096],
 	///V0-VF
@@ -143,7 +127,8 @@ impl CoreState {
 			actual_frame_time: Duration::new(0, 0),
 			frame_time_with_sleep: Duration::new(0, 0),
 			fps: 0.0,
-			config: Config::default(),
+			running: false,
+			step_frame: false,
 			error: None,
 			memory: [0; 4096],
 			v_registers: [0; 16],
@@ -360,11 +345,11 @@ impl Core {
 
 			self.handle_events();
 
-			let running = self.state.config.running;
-			let step_frame = self.state.config.step_frame;
+			let running = self.state.running;
+			let step_frame = self.state.step_frame;
 
 			if running || step_frame {
-				self.state.config.step_frame = false;
+				self.state.step_frame = false;
 
 				self.step_frame();
 				if self.state.error.is_some() {
@@ -404,10 +389,10 @@ impl Core {
 		while let Ok(event) = self.events.try_recv() {
 			match event {
 				Event::ChangeRunning(running) => {
-					self.state.config.running = running;
+					self.state.running = running;
 				}
 				Event::StepFrame => {
-					self.state.config.step_frame = true;
+					self.state.step_frame = true;
 				}
 				Event::LoadRom(path) => {
 					self.load_game(path);

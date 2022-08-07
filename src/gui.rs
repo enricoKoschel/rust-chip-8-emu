@@ -247,7 +247,7 @@ impl Gui {
 	fn add_running_and_step_frame(&mut self, ui: &mut egui::Ui) {
 		let state = self.state_receiver.latest();
 
-		let mut running = state.config.running;
+		let mut running = state.running;
 		if ui.checkbox(&mut running, "Running").clicked() {
 			self.send_event(Event::ChangeRunning(running));
 		};
@@ -257,6 +257,9 @@ impl Gui {
 				self.send_event(Event::StepFrame);
 			}
 		});
+
+		//TODO Add step opcode button
+		//TODO Add opcodes per frame slider
 	}
 
 	fn check_core_error(&mut self, ctx: &Context) {
