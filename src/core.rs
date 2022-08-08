@@ -482,6 +482,7 @@ impl Core {
 	fn execute_opcode_0(&mut self, opcode: u16) {
 		match opcode {
 			0x00E0 => {
+				//0x00E0 - Clear the display
 				self.state.image.clear(Rgba::BLACK);
 			}
 			0x00EE => {
