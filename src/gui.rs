@@ -189,12 +189,16 @@ impl Gui {
 			.open(&mut show_options_window)
 			.frame(self.transparent_frame)
 			.show(ctx, |ui| {
-				let scale_slider =
-					ui.add(egui::Slider::new(&mut self.scale, 1.0..=self.max_scale).text("Scale"));
+				ui.horizontal(|ui| {
+					let scale_slider = ui.add(
+						egui::Slider::new(&mut self.scale, 1.0..=self.max_scale).text("Scale"),
+					);
 
-				if scale_slider.changed() {
-					self.resize_to_scale(frame);
-				}
+					let button = ui.button("Snap to scale");
+					if button.clicked() || scale_slider.changed() {
+						self.resize_to_scale(frame);
+					}
+				});
 
 				ui.separator();
 
