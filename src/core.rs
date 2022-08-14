@@ -1,5 +1,7 @@
 use eframe::egui;
+use log::{error, trace, warn};
 use pixel_buf::{PixelBuf, Rgba};
+use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 use std::time::Duration;
 use std::{fmt, fs, thread};
@@ -8,12 +10,24 @@ const FPS: f64 = 60.0;
 pub const NAME: &str = "Chip-8 Emulator";
 pub const BASE_WIDTH: usize = 80;
 pub const BASE_HEIGHT: usize = 40;
+pub const DEFAULT_SCALE: f32 = 4.0;
 
+#[derive(Debug)]
 pub enum Event {
 	ChangeRunning(bool),
 	StepFrame,
 	LoadRom(PathBuf),
 	ChangeOpcodesPerFrame(u32),
+}
+
+impl fmt::Display for Event {
+	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+		if let Event::LoadRom(path) = self {
+			write!(f, "LoadRom({})", path.display())
+		} else {
+			write!(f, "{:?}", self)
+		}
+	}
 }
 
 #[derive(Clone)]
@@ -37,7 +51,7 @@ pub enum ErrorKind {
 }
 
 impl fmt::Display for ErrorKind {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
 		match self {
 			ErrorKind::InvalidOpcode { opcode, address } => {
 				write!(
@@ -317,13 +331,17 @@ impl Core {
 				return;
 			}
 		};
+		trace!("Loading ROM: {}", path.display());
 
-		self.state.rom_name = Some(
-			path.file_name()
-				.expect("Should not fail if file could be opened above")
-				.to_string_lossy()
-				.to_string(),
-		);
+		let file_name = match path.file_name() {
+			Some(path) => path.to_string_lossy().to_string(),
+			None => {
+				warn!("Filename of path {} cannot be displayed", path.display());
+				"<Filename cannot be displayed>".into()
+			}
+		};
+
+		self.state.rom_name = Some(file_name);
 		self.state.rom_size = Some(rom.len());
 
 		//The lower 512 bytes were reserved for the interpreter on original hardware
@@ -333,9 +351,11 @@ impl Core {
 				size: rom.len(),
 				allowed: 4096 - 512,
 			});
+			return;
 		}
 
 		self.state.memory[512..(rom.len() + 512)].copy_from_slice(&rom);
+		trace!("ROM loaded");
 	}
 
 	pub fn run(&mut self) {
@@ -364,15 +384,30 @@ impl Core {
 				self.state.current_frame += 1;
 			}
 
+			trace!(
+				"Frame {} -------------------------------------------",
+				self.state.current_frame
+			);
+
 			//Limit the thread to 60 fps when the core is not running or frame stepping is used
 			//Otherwise limit to the configured fps
 			let desired_fps = if step_frame || !running { 60.0 } else { FPS };
+			trace!("Desired FPS: {}", desired_fps);
 
 			let actual_frame_time = start_of_frame.elapsed();
-			self.limit_speed(desired_fps, actual_frame_time.as_secs_f64() * 1000.0);
+			let elapsed_millis = actual_frame_time.as_secs_f64() * 1000.0;
+			trace!("Actual frame time: {}ms", elapsed_millis);
+
+			self.limit_speed(desired_fps, elapsed_millis);
 
 			let frame_time_with_sleep = start_of_frame.elapsed();
+			trace!(
+				"Frame time with sleep: {}ms",
+				frame_time_with_sleep.as_secs_f64() * 1000.0
+			);
+
 			let fps = 1000.0 / (frame_time_with_sleep.as_secs_f64() * 1000.0);
+			trace!("FPS: {}", fps);
 
 			if running {
 				self.state.actual_frame_time = actual_frame_time;
@@ -390,6 +425,8 @@ impl Core {
 		let mut event_handled = false;
 
 		while let Ok(event) = self.events.try_recv() {
+			trace!("Handling event: {}", event);
+
 			match event {
 				Event::ChangeRunning(running) => {
 					self.state.running = running;
@@ -416,19 +453,26 @@ impl Core {
 
 	fn limit_speed(&mut self, desired_fps: f64, elapsed_millis: f64) {
 		let min_frame_time_millis = 1000.0 / desired_fps;
+		trace!("Min frame time: {}ms", min_frame_time_millis);
+
 		let sleep_needed_millis = min_frame_time_millis - elapsed_millis + self.sleep_error_millis;
 
 		if sleep_needed_millis > 0.0 {
+			trace!("Sleeping for {}ms", sleep_needed_millis);
+
 			let time_before_sleep = std::time::Instant::now();
 			let duration = Duration::from_secs_f64(sleep_needed_millis / 1000.0);
 			spin_sleep::sleep(duration);
 
 			let millis_slept = time_before_sleep.elapsed().as_secs_f64() * 1000.0;
+			trace!("Slept for {}ms", millis_slept);
 
 			//Calculate the error from sleeping too much/not enough
 			self.sleep_error_millis = sleep_needed_millis - millis_slept;
+			trace!("Sleep error: {}ms", self.sleep_error_millis);
 		} else {
 			self.sleep_error_millis = 0.0;
+			trace!("Resetting sleep error");
 		}
 	}
 
@@ -455,6 +499,11 @@ impl Core {
 
 	fn execute_opcode(&mut self) {
 		let opcode = self.read_16bit_immediate();
+		trace!(
+			"Opcode: {:#06X} at {:#06X}",
+			opcode,
+			self.state.program_counter - 2
+		);
 
 		let first_nibble = (opcode & 0xF000) >> 12;
 
@@ -860,6 +909,8 @@ impl Core {
 
 	#[inline]
 	fn core_error(&mut self, error: ErrorKind) {
+		error!("Core error: {}", error);
+
 		self.state.error = Some(error);
 		self.update_gui();
 	}
