@@ -100,6 +100,16 @@ impl Gui {
 		));
 	}
 
+	fn update_scale(&mut self, ctx: &Context) {
+		let mut screen_size = ctx.input().screen_rect.size();
+		screen_size.y -= self.menu_bar_height;
+
+		let scale_x = screen_size.x / core::BASE_WIDTH as f32;
+		let scale_y = screen_size.y / core::BASE_HEIGHT as f32;
+
+		self.scale = self.max_scale.min(scale_x.min(scale_y));
+	}
+
 	fn add_menu_bar(&mut self, ctx: &Context, frame: &mut Frame) {
 		let top_bottom_panel = egui::TopBottomPanel::top("menubar_container").show(ctx, |ui| {
 			egui::menu::bar(ui, |ui| {
@@ -188,6 +198,19 @@ impl Gui {
 
 				ui.separator();
 
+				let state = self.state_receiver.latest();
+
+				let mut opcodes_per_frame = state.opcodes_per_frame;
+				if ui
+					.add(
+						egui::Slider::new(&mut opcodes_per_frame, 1..=100)
+							.text("Opcodes per frame"),
+					)
+					.changed()
+				{
+					self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
+				}
+
 				self.add_running_and_step_frame(ui);
 			});
 
@@ -246,14 +269,6 @@ impl Gui {
 
 	fn add_running_and_step_frame(&mut self, ui: &mut egui::Ui) {
 		let state = self.state_receiver.latest().clone();
-
-		let mut opcodes_per_frame = state.opcodes_per_frame;
-		if ui
-			.add(egui::Slider::new(&mut opcodes_per_frame, 1..=100).text("Opcodes per frame"))
-			.changed()
-		{
-			self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
-		}
 
 		let mut running = state.running;
 		if ui.checkbox(&mut running, "Running").clicked() {
@@ -328,5 +343,7 @@ impl eframe::App for Gui {
 		self.add_info_window(ctx);
 
 		self.check_core_error(ctx);
+
+		self.update_scale(ctx);
 	}
 }

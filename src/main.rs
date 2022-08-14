@@ -20,8 +20,9 @@ fn main() {
 		(size.width as f32, size.height as f32)
 	};
 
-	let max_scale = (screen_width / core::BASE_WIDTH as f32).round();
-	let scale = (max_scale / 1.4).round();
+	//Add 30% so max scale cannot be reached by resizing the window
+	let max_scale = (screen_width / core::BASE_WIDTH as f32).round() * 1.3;
+	let scale = (max_scale / 1.8).round();
 
 	let initial_window_size = egui::Vec2::new(
 		core::BASE_WIDTH as f32 * scale,
@@ -34,7 +35,7 @@ fn main() {
 	);
 
 	let options = eframe::NativeOptions {
-		resizable: false,
+		resizable: true,
 		initial_window_pos: Some(screen_center),
 		initial_window_size: Some(initial_window_size),
 		min_window_size: Some(egui::Vec2::new(
