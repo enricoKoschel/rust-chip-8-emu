@@ -18,6 +18,7 @@ pub enum Event {
 	StepFrame,
 	LoadRom(PathBuf),
 	ChangeOpcodesPerFrame(u32),
+	Exit,
 }
 
 impl fmt::Display for Event {
@@ -114,6 +115,7 @@ pub struct CoreState {
 	pub rom_name: Option<String>,
 	pub rom_size: Option<usize>,
 	pub opcodes_per_frame: u32,
+	pub exit_requested: bool,
 }
 
 impl CoreState {
@@ -159,6 +161,7 @@ impl CoreState {
 			rom_name: None,
 			rom_size: None,
 			opcodes_per_frame: 20,
+			exit_requested: false,
 		}
 	}
 }
@@ -360,7 +363,7 @@ impl Core {
 
 	pub fn run(&mut self) {
 		loop {
-			if self.state.error.is_some() {
+			if self.should_exit() {
 				return;
 			}
 
@@ -375,7 +378,7 @@ impl Core {
 				self.state.step_frame = false;
 
 				self.step_frame();
-				if self.state.error.is_some() {
+				if self.should_exit() {
 					return;
 				}
 
@@ -440,6 +443,10 @@ impl Core {
 				Event::ChangeOpcodesPerFrame(opcodes_per_frame) => {
 					self.state.opcodes_per_frame = opcodes_per_frame;
 				}
+				Event::Exit => {
+					self.state.running = false;
+					self.state.exit_requested = true;
+				}
 			}
 
 			event_handled = true;
@@ -449,6 +456,10 @@ impl Core {
 		if event_handled {
 			self.update_gui();
 		}
+	}
+
+	fn should_exit(&self) -> bool {
+		self.state.error.is_some() || self.state.exit_requested
 	}
 
 	fn limit_speed(&mut self, desired_fps: f64, elapsed_millis: f64) {
@@ -480,7 +491,7 @@ impl Core {
 		for _ in 0..self.state.opcodes_per_frame {
 			self.execute_opcode();
 
-			if self.state.error.is_some() {
+			if self.should_exit() {
 				return;
 			}
 		}

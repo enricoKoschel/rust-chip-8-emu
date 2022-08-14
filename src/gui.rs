@@ -4,6 +4,7 @@ use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
 use log::{error, trace};
 use pixel_buf::PixelBuf;
+use std::thread;
 
 const FONT_SIZE: f32 = 1.3;
 
@@ -234,6 +235,15 @@ impl Gui {
 					}
 
 					self.add_running_and_step_frame(ui);
+
+					if ui.button("Reset").clicked() {
+						self.send_event(Event::Exit);
+
+						//Sleep so the other thread has enough time to terminate
+						thread::sleep(std::time::Duration::from_millis(100));
+
+						self.create_new_core(ctx);
+					}
 				});
 			});
 
@@ -319,12 +329,15 @@ impl Gui {
 
 		if let Some(error) = &state.error {
 			if self.show_error_window(ctx, &error.to_string()) {
-				//Create new core
-				let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
-				self.state_receiver = state_receiver;
-				self.events = events;
+				self.create_new_core(ctx);
 			}
 		}
+	}
+
+	fn create_new_core(&mut self, ctx: &Context) {
+		let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
+		self.state_receiver = state_receiver;
+		self.events = events;
 	}
 
 	fn check_gui_error(&mut self, ctx: &Context) {
