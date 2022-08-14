@@ -37,7 +37,7 @@ impl Gui {
 		Gui {
 			theme,
 			first_frame: true,
-			show_rom_window: false,
+			show_rom_window: true,
 			show_options_window: false,
 			show_info_window: false,
 			scale,
@@ -187,7 +187,13 @@ impl Gui {
 
 						if let Some(path) = path {
 							trace!("ROM file picked: {}", path.display());
+							if state.rom_name.is_some() {
+								//Reset core if a rom was already loaded
+								self.reset_core(ctx);
+							}
+
 							self.send_event(Event::LoadRom(path));
+							self.send_event(Event::ChangeRunning(true));
 						} else {
 							error!("Error while picking rom file");
 
@@ -224,30 +230,38 @@ impl Gui {
 					let state = self.state_receiver.latest();
 
 					let mut opcodes_per_frame = state.opcodes_per_frame;
-					if ui
-						.add(
-							egui::Slider::new(&mut opcodes_per_frame, 1..=100)
-								.text("Opcodes per frame"),
-						)
-						.changed()
-					{
+					let slider = ui.add(
+						egui::Slider::new(&mut opcodes_per_frame, 1..=100)
+							.text("Opcodes per frame"),
+					);
+
+					if slider.changed() {
 						self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
+					}
+					if slider.double_clicked() {
+						self.send_event(Event::ChangeOpcodesPerFrame(20));
 					}
 
 					self.add_running_and_step_frame(ui);
 
+					ui.separator();
+
 					if ui.button("Reset").clicked() {
-						self.send_event(Event::Exit);
-
-						//Sleep so the other thread has enough time to terminate
-						thread::sleep(std::time::Duration::from_millis(100));
-
-						self.create_new_core(ctx);
+						self.reset_core(ctx);
 					}
 				});
 			});
 
 		self.show_options_window = show_options_window;
+	}
+
+	fn reset_core(&mut self, ctx: &Context) {
+		self.send_event(Event::Exit);
+
+		//Sleep so the other thread has enough time to terminate
+		thread::sleep(std::time::Duration::from_millis(100));
+
+		self.create_new_core(ctx);
 	}
 
 	fn add_info_window(&mut self, ctx: &Context) {
@@ -309,16 +323,18 @@ impl Gui {
 
 	fn add_running_and_step_frame(&mut self, ui: &mut egui::Ui) {
 		let state = self.state_receiver.latest();
-
 		let mut running = state.running;
-		if ui.checkbox(&mut running, "Running").clicked() {
-			self.send_event(Event::ChangeRunning(running));
-		};
 
-		ui.add_enabled_ui(!running, |ui| {
-			if ui.button("Step frame").clicked() {
-				self.send_event(Event::StepFrame);
-			}
+		ui.add_enabled_ui(state.rom_name.is_some(), |ui| {
+			if ui.checkbox(&mut running, "Running").clicked() {
+				self.send_event(Event::ChangeRunning(running));
+			};
+
+			ui.add_enabled_ui(!running, |ui| {
+				if ui.button("Step frame").clicked() {
+					self.send_event(Event::StepFrame);
+				}
+			});
 		});
 
 		//TODO Add step opcode button
@@ -335,6 +351,8 @@ impl Gui {
 	}
 
 	fn create_new_core(&mut self, ctx: &Context) {
+		trace!("Creating new core");
+
 		let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
 		self.state_receiver = state_receiver;
 		self.events = events;
