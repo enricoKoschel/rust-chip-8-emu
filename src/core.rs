@@ -8,8 +8,8 @@ use std::{fmt, fs, thread};
 
 const FPS: f64 = 60.0;
 pub const NAME: &str = "Chip-8 Emulator";
-pub const BASE_WIDTH: usize = 80;
-pub const BASE_HEIGHT: usize = 40;
+pub const BASE_WIDTH: usize = 64;
+pub const BASE_HEIGHT: usize = 32;
 pub const DEFAULT_SCALE: f32 = 4.0;
 
 #[derive(Debug)]
@@ -776,8 +776,8 @@ impl Core {
 			let raw_byte = self.state.memory[self.state.i_register as usize + row as usize];
 
 			for col in 0..=7 {
-				let x = (x + col) as usize;
-				let y = (y + row) as usize;
+				let x = (x + col) as usize % BASE_WIDTH;
+				let y = (y + row) as usize % BASE_HEIGHT;
 				let pixel_value = (raw_byte >> (7 - col)) & 0x1;
 				let old_pixel_value = if self.state.image[(x, y)] == Rgba::WHITE {
 					1
