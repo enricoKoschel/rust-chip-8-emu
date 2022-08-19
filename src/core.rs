@@ -554,10 +554,10 @@ impl Core {
 					}),
 				};
 			}
-			_ => self.core_error(ErrorKind::InvalidOpcode {
-				opcode,
-				address: self.state.program_counter - 2,
-			}),
+			_ => {
+				//Ox0NNN: Calls RCA 1802 program at address NNN
+				//This opcode is ignored on modern interpreters
+			}
 		}
 	}
 
@@ -641,25 +641,28 @@ impl Core {
 				self.state.v_registers[x as usize] = self.state.v_registers[y as usize];
 			}
 			0x1 => {
-				//0x8XY1: Set VX to VX | VY
+				//0x8XY1: Set VX to VX | VY, reset VF to 0
 				let x = (opcode & 0x0F00) >> 8;
 				let y = (opcode & 0x00F0) >> 4;
 
 				self.state.v_registers[x as usize] |= self.state.v_registers[y as usize];
+				self.state.v_registers[0xF] = 0;
 			}
 			0x2 => {
-				//0x8XY2: Set VX to VX & VY
+				//0x8XY2: Set VX to VX & VY reset VF to 0
 				let x = (opcode & 0x0F00) >> 8;
 				let y = (opcode & 0x00F0) >> 4;
 
 				self.state.v_registers[x as usize] &= self.state.v_registers[y as usize];
+				self.state.v_registers[0xF] = 0;
 			}
 			0x3 => {
-				//0x8XY3: Set VX to VX ^ VY
+				//0x8XY3: Set VX to VX ^ VY reset VF to 0
 				let x = (opcode & 0x0F00) >> 8;
 				let y = (opcode & 0x00F0) >> 4;
 
 				self.state.v_registers[x as usize] ^= self.state.v_registers[y as usize];
+				self.state.v_registers[0xF] = 0;
 			}
 			0x4 => {
 				//0x8XY4: Add VY to VX. Set VF to 1 if there's a carry, 0 otherwise.
@@ -687,8 +690,9 @@ impl Core {
 				//0x8XY6: Store the least significant bit of VX in VF and then shift VX to the right by 1.
 				let x = (opcode & 0x0F00) >> 8;
 
-				self.state.v_registers[0xF] = self.state.v_registers[x as usize] & 0x1;
+				let lsb = self.state.v_registers[x as usize] & 0x1;
 				self.state.v_registers[x as usize] >>= 1;
+				self.state.v_registers[0xF] = lsb;
 			}
 			0x7 => {
 				//0x8XY7: Set VX to VY minus VX. Set VF to 0 if there's a borrow, 1 otherwise.
@@ -705,8 +709,9 @@ impl Core {
 				//0x8XYE: Store the most significant bit of VX in VF and then shift VX to the left by 1.
 				let x = (opcode & 0x0F00) >> 8;
 
-				self.state.v_registers[0xF] = (self.state.v_registers[x as usize] >> 7) & 0x1;
+				let msb = (self.state.v_registers[x as usize] >> 7) & 0x1;
 				self.state.v_registers[x as usize] <<= 1;
+				self.state.v_registers[0xF] = msb;
 			}
 			_ => self.core_error(ErrorKind::InvalidOpcode {
 				opcode,
@@ -764,20 +769,25 @@ impl Core {
 			let n = opcode & 0x000F;
 
 			(
-				self.state.v_registers[x as usize],
-				self.state.v_registers[y as usize],
-				n as u8,
+				self.state.v_registers[x as usize] as usize,
+				self.state.v_registers[y as usize] as usize,
+				n as usize,
 			)
 		};
 
 		self.state.v_registers[0xF] = 0;
 
 		for row in 0..height {
-			let raw_byte = self.state.memory[self.state.i_register as usize + row as usize];
+			let raw_byte = self.state.memory[self.state.i_register as usize + row];
 
 			for col in 0..=7 {
-				let x = (x + col) as usize % BASE_WIDTH;
-				let y = (y + row) as usize % BASE_HEIGHT;
+				let x = (x % BASE_WIDTH) + col;
+				let y = (y % BASE_HEIGHT) + row;
+
+				if x > BASE_WIDTH - 1 || y > BASE_HEIGHT - 1 {
+					continue;
+				}
+
 				let pixel_value = (raw_byte >> (7 - col)) & 0x1;
 				let old_pixel_value = if self.state.image[(x, y)] == Rgba::WHITE {
 					1
@@ -869,16 +879,15 @@ impl Core {
 			0x55 => {
 				//0xFX55: Store V0 to VX in memory starting at address I.
 				for i in 0..=x {
-					self.write_mem(
-						self.state.i_register + i,
-						self.state.v_registers[i as usize],
-					);
+					self.write_mem(self.state.i_register, self.state.v_registers[i as usize]);
+					self.state.i_register += 1;
 				}
 			}
 			0x65 => {
 				//0xFX65: Read V0 to VX from memory starting at address I.
 				for i in 0..=x {
-					self.state.v_registers[i as usize] = self.read_mem(self.state.i_register + i);
+					self.state.v_registers[i as usize] = self.read_mem(self.state.i_register);
+					self.state.i_register += 1;
 				}
 			}
 			_ => self.core_error(ErrorKind::InvalidOpcode {
@@ -889,9 +898,20 @@ impl Core {
 	}
 
 	fn wait_for_key_press(&self) -> u8 {
+		//Update the GUI before waiting for a key press,
+		//as it can take a while and the latest frame should be visible
+		self.update_gui();
+
 		loop {
 			for key in 0..=0xF {
-				if self.is_key_down(key) {
+				let egui_key = self
+					.state
+					.key_map
+					.get_key_value(&key)
+					.expect("Key values between 0x0 and 0xF should not be missing")
+					.1;
+
+				if self.ctx.input().key_released(*egui_key) {
 					return key;
 				}
 			}
