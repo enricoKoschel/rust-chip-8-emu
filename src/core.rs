@@ -210,117 +210,26 @@ impl Core {
 	}
 
 	fn load_font(&mut self) {
-		//0
-		self.state.memory[0] = 0b01100000;
-		self.state.memory[1] = 0b11010000;
-		self.state.memory[2] = 0b10010000;
-		self.state.memory[3] = 0b10110000;
-		self.state.memory[4] = 0b01100000;
+		let font = [
+			0b01100000, 0b11010000, 0b10010000, 0b10110000, 0b01100000, // 0
+			0b00100000, 0b01100000, 0b00100000, 0b00100000, 0b01110000, // 1
+			0b01100000, 0b10010000, 0b00100000, 0b01000000, 0b11110000, // 2
+			0b01100000, 0b10010000, 0b00100000, 0b10010000, 0b01100000, // 3
+			0b00100000, 0b01100000, 0b10100000, 0b11110000, 0b00100000, // 4
+			0b11110000, 0b10000000, 0b11100000, 0b00010000, 0b11100000, // 5
+			0b01100000, 0b10000000, 0b11100000, 0b10010000, 0b01100000, // 6
+			0b11110000, 0b00010000, 0b00100000, 0b01000000, 0b01000000, // 7
+			0b01100000, 0b10010000, 0b01100000, 0b10010000, 0b01100000, // 8
+			0b01100000, 0b10010000, 0b01110000, 0b00010000, 0b01100000, // 9
+			0b01100000, 0b10010000, 0b11110000, 0b10010000, 0b10010000, // A
+			0b11100000, 0b10010000, 0b11100000, 0b10010000, 0b11100000, // B
+			0b01100000, 0b10000000, 0b10000000, 0b10000000, 0b01100000, // C
+			0b11100000, 0b10010000, 0b10010000, 0b10010000, 0b11100000, // D
+			0b11110000, 0b10000000, 0b11100000, 0b10000000, 0b11110000, // E
+			0b11110000, 0b10000000, 0b11100000, 0b10000000, 0b10000000, // F
+		];
 
-		//1
-		self.state.memory[5] = 0b00100000;
-		self.state.memory[6] = 0b01100000;
-		self.state.memory[7] = 0b00100000;
-		self.state.memory[8] = 0b00100000;
-		self.state.memory[9] = 0b01110000;
-
-		//2
-		self.state.memory[10] = 0b01100000;
-		self.state.memory[11] = 0b10010000;
-		self.state.memory[12] = 0b00100000;
-		self.state.memory[13] = 0b01000000;
-		self.state.memory[14] = 0b11110000;
-
-		//3
-		self.state.memory[15] = 0b01100000;
-		self.state.memory[16] = 0b10010000;
-		self.state.memory[17] = 0b00100000;
-		self.state.memory[18] = 0b10010000;
-		self.state.memory[19] = 0b01100000;
-
-		//4
-		self.state.memory[20] = 0b00100000;
-		self.state.memory[21] = 0b01100000;
-		self.state.memory[22] = 0b10100000;
-		self.state.memory[23] = 0b11110000;
-		self.state.memory[24] = 0b00100000;
-
-		//5
-		self.state.memory[25] = 0b11110000;
-		self.state.memory[26] = 0b10000000;
-		self.state.memory[27] = 0b11100000;
-		self.state.memory[28] = 0b00010000;
-		self.state.memory[29] = 0b11100000;
-
-		//6
-		self.state.memory[30] = 0b01100000;
-		self.state.memory[31] = 0b10000000;
-		self.state.memory[32] = 0b11100000;
-		self.state.memory[33] = 0b10010000;
-		self.state.memory[34] = 0b01100000;
-
-		//7
-		self.state.memory[35] = 0b11110000;
-		self.state.memory[36] = 0b00010000;
-		self.state.memory[37] = 0b00100000;
-		self.state.memory[38] = 0b01000000;
-		self.state.memory[39] = 0b01000000;
-
-		//8
-		self.state.memory[40] = 0b01100000;
-		self.state.memory[41] = 0b10010000;
-		self.state.memory[42] = 0b01100000;
-		self.state.memory[43] = 0b10010000;
-		self.state.memory[44] = 0b01100000;
-
-		//9
-		self.state.memory[45] = 0b01100000;
-		self.state.memory[46] = 0b10010000;
-		self.state.memory[47] = 0b01110000;
-		self.state.memory[48] = 0b00010000;
-		self.state.memory[49] = 0b01100000;
-
-		//A
-		self.state.memory[50] = 0b01100000;
-		self.state.memory[51] = 0b10010000;
-		self.state.memory[52] = 0b11110000;
-		self.state.memory[53] = 0b10010000;
-		self.state.memory[54] = 0b10010000;
-
-		//B
-		self.state.memory[55] = 0b11100000;
-		self.state.memory[56] = 0b10010000;
-		self.state.memory[57] = 0b11100000;
-		self.state.memory[58] = 0b10010000;
-		self.state.memory[59] = 0b11100000;
-
-		//C
-		self.state.memory[60] = 0b01100000;
-		self.state.memory[61] = 0b10000000;
-		self.state.memory[62] = 0b10000000;
-		self.state.memory[63] = 0b10000000;
-		self.state.memory[64] = 0b01100000;
-
-		//D
-		self.state.memory[65] = 0b11100000;
-		self.state.memory[66] = 0b10010000;
-		self.state.memory[67] = 0b10010000;
-		self.state.memory[68] = 0b10010000;
-		self.state.memory[69] = 0b11100000;
-
-		//E
-		self.state.memory[70] = 0b11110000;
-		self.state.memory[71] = 0b10000000;
-		self.state.memory[72] = 0b11100000;
-		self.state.memory[73] = 0b10000000;
-		self.state.memory[74] = 0b11110000;
-
-		//F
-		self.state.memory[75] = 0b11110000;
-		self.state.memory[76] = 0b10000000;
-		self.state.memory[77] = 0b11100000;
-		self.state.memory[78] = 0b10000000;
-		self.state.memory[79] = 0b10000000;
+		self.state.memory[0..font.len()].copy_from_slice(&font);
 	}
 
 	fn load_game(&mut self, path: PathBuf) {
@@ -797,13 +706,13 @@ impl Core {
 				self.state.image[(x, y)] = if (pixel_value ^ old_pixel_value) == 1 {
 					Rgba::WHITE
 				} else {
+					//Set VF to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen
+					if old_pixel_value == 1 {
+						self.state.v_registers[0xF] = 1;
+					}
+
 					Rgba::BLACK
 				};
-
-				//Set VF to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen
-				if pixel_value != old_pixel_value {
-					self.state.v_registers[0xF] = 1;
-				}
 			}
 		}
 	}
