@@ -111,7 +111,7 @@ pub struct CoreState {
 	pub call_stack: Vec<u16>,
 	pub delay_timer: u8,
 	pub sound_timer: u8,
-	pub key_map: std::collections::HashMap<u8, egui::Key>,
+	pub key_map: [egui::Key; 16],
 	pub rom_name: Option<String>,
 	pub rom_size: Option<usize>,
 	pub opcodes_per_frame: u32,
@@ -121,23 +121,24 @@ pub struct CoreState {
 impl CoreState {
 	pub fn new(image: PixelBuf) -> Self {
 		//TODO Get keymap from GUI
-		let mut key_map = std::collections::HashMap::new();
-		key_map.insert(0x0, egui::Key::Num0);
-		key_map.insert(0x1, egui::Key::Num1);
-		key_map.insert(0x2, egui::Key::Num2);
-		key_map.insert(0x3, egui::Key::Num3);
-		key_map.insert(0x4, egui::Key::Num4);
-		key_map.insert(0x5, egui::Key::Num5);
-		key_map.insert(0x6, egui::Key::Num6);
-		key_map.insert(0x7, egui::Key::Num7);
-		key_map.insert(0x8, egui::Key::Num8);
-		key_map.insert(0x9, egui::Key::Num9);
-		key_map.insert(0xA, egui::Key::A);
-		key_map.insert(0xB, egui::Key::B);
-		key_map.insert(0xC, egui::Key::C);
-		key_map.insert(0xD, egui::Key::D);
-		key_map.insert(0xE, egui::Key::E);
-		key_map.insert(0xF, egui::Key::F);
+		let key_map = [
+			egui::Key::Num0,
+			egui::Key::Num1,
+			egui::Key::Num2,
+			egui::Key::Num3,
+			egui::Key::Num4,
+			egui::Key::Num5,
+			egui::Key::Num6,
+			egui::Key::Num7,
+			egui::Key::Num8,
+			egui::Key::Num9,
+			egui::Key::A,
+			egui::Key::B,
+			egui::Key::C,
+			egui::Key::D,
+			egui::Key::E,
+			egui::Key::F,
+		];
 
 		Self {
 			image,
@@ -811,16 +812,12 @@ impl Core {
 		//as it can take a while and the latest frame should be visible
 		self.update_gui();
 
+		//FIXME Doesnt pass test
 		loop {
 			for key in 0..=0xF {
-				let egui_key = self
-					.state
-					.key_map
-					.get_key_value(&key)
-					.expect("Key values between 0x0 and 0xF should not be missing")
-					.1;
+				let egui_key = self.state.key_map[key as usize];
 
-				if self.ctx.input().key_released(*egui_key) {
+				if self.ctx.input().key_released(egui_key) {
 					return key;
 				}
 			}
@@ -828,16 +825,18 @@ impl Core {
 	}
 
 	fn is_key_down(&self, key: u8) -> bool {
-		if let Some(key_value) = self.state.key_map.get_key_value(&key) {
-			self.ctx.input().keys_down.contains(key_value.1)
-		} else {
+		if key > 0xF {
 			//Maybe error instead of returning false?
-			false
+			return false;
 		}
+
+		let egui_key = self.state.key_map[key as usize];
+		self.ctx.input().keys_down.contains(&egui_key)
 	}
 
 	#[inline]
 	fn update_gui(&self) {
+		//FIXME Panics sometimes even though receiver wasn't dropped?
 		self.state_updater.update(self.state.clone()).unwrap();
 		self.ctx.request_repaint();
 	}

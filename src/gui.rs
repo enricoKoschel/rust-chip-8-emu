@@ -22,6 +22,7 @@ pub struct Gui {
 	state_receiver: single_value_channel::Receiver<core::CoreState>,
 	events: crossbeam_channel::Sender<Event>,
 	gui_error: Option<String>,
+	last_rom_path: Option<std::path::PathBuf>,
 }
 
 impl Gui {
@@ -48,6 +49,7 @@ impl Gui {
 			state_receiver,
 			events,
 			gui_error: None,
+			last_rom_path: None,
 		}
 	}
 
@@ -192,6 +194,7 @@ impl Gui {
 								self.reset_core(ctx);
 							}
 
+							self.last_rom_path = Some(path.clone());
 							self.send_event(Event::LoadRom(path));
 							self.send_event(Event::ChangeRunning(true));
 						} else {
@@ -246,9 +249,14 @@ impl Gui {
 
 					ui.separator();
 
-					if ui.button("Reset").clicked() {
-						self.reset_core(ctx);
-					}
+					ui.horizontal(|ui| {
+						if ui.button("Reset").clicked() {
+							self.reset_core(ctx);
+						}
+						if ui.button("Reset ROM").clicked() {
+							self.reset_core_keep_rom(ctx);
+						}
+					});
 				});
 			});
 
@@ -256,12 +264,25 @@ impl Gui {
 	}
 
 	fn reset_core(&mut self, ctx: &Context) {
+		//Keep opcodes per frame between resets
+		let opcodes_per_frame = self.state_receiver.latest().opcodes_per_frame;
+
 		self.send_event(Event::Exit);
 
 		//Sleep so the other thread has enough time to terminate
 		thread::sleep(std::time::Duration::from_millis(100));
 
 		self.create_new_core(ctx);
+		self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
+	}
+
+	fn reset_core_keep_rom(&mut self, ctx: &Context) {
+		self.reset_core(ctx);
+
+		if let Some(path) = self.last_rom_path.clone() {
+			self.send_event(Event::LoadRom(path));
+			self.send_event(Event::ChangeRunning(true));
+		}
 	}
 
 	fn add_info_window(&mut self, ctx: &Context) {
