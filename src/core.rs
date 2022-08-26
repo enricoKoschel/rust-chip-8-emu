@@ -271,7 +271,7 @@ impl Core {
 		trace!("ROM loaded");
 	}
 
-	pub fn run(&mut self) {
+	fn run(&mut self) {
 		loop {
 			if self.should_exit() {
 				return;
