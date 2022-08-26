@@ -116,6 +116,8 @@ pub struct CoreState {
 	pub rom_size: Option<usize>,
 	pub opcodes_per_frame: u32,
 	pub exit_requested: bool,
+	pub keys_down_this_frame: [bool; 16],
+	pub keys_down_last_frame: [bool; 16],
 }
 
 impl CoreState {
@@ -163,6 +165,8 @@ impl CoreState {
 			rom_size: None,
 			opcodes_per_frame: 20,
 			exit_requested: false,
+			keys_down_this_frame: [false; 16],
+			keys_down_last_frame: [false; 16],
 		}
 	}
 }
@@ -398,6 +402,13 @@ impl Core {
 	}
 
 	fn step_frame(&mut self) {
+		self.state.keys_down_last_frame = self.state.keys_down_this_frame;
+
+		for key in 0..16 {
+			let egui_key = self.state.key_map[key];
+			self.state.keys_down_this_frame[key] = self.ctx.input().key_down(egui_key);
+		}
+
 		for _ in 0..self.state.opcodes_per_frame {
 			self.execute_opcode();
 
@@ -755,8 +766,7 @@ impl Core {
 			}
 			0x0A => {
 				//0xFX0A: Wait for a key press, then store the value of the key in VX.
-				let key = self.wait_for_key_press();
-				self.state.v_registers[x as usize] = key;
+				self.wait_for_key_press(x as usize);
 			}
 			0x15 => {
 				//0xFX15: Set the delay timer to VX.
@@ -807,19 +817,14 @@ impl Core {
 		}
 	}
 
-	fn wait_for_key_press(&self) -> u8 {
-		//Update the GUI before waiting for a key press,
-		//as it can take a while and the latest frame should be visible
-		self.update_gui();
+	fn wait_for_key_press(&mut self, register_to_assign: usize) {
+		//Decrement pc to prevent the next opcode from being executed
+		self.state.program_counter -= 2;
 
-		//FIXME Doesnt pass test
-		loop {
-			for key in 0..=0xF {
-				let egui_key = self.state.key_map[key as usize];
-
-				if self.ctx.input().key_released(egui_key) {
-					return key;
-				}
+		for key in 0..=0xF {
+			if self.was_key_released(key) {
+				self.state.program_counter += 2;
+				self.state.v_registers[register_to_assign] = key;
 			}
 		}
 	}
@@ -830,8 +835,17 @@ impl Core {
 			return false;
 		}
 
-		let egui_key = self.state.key_map[key as usize];
-		self.ctx.input().keys_down.contains(&egui_key)
+		self.state.keys_down_this_frame[key as usize]
+	}
+
+	fn was_key_released(&mut self, key: u8) -> bool {
+		if key > 0xF {
+			//Maybe error instead of returning false?
+			return false;
+		}
+
+		self.state.keys_down_this_frame[key as usize] == false
+			&& self.state.keys_down_last_frame[key as usize] == true
 	}
 
 	#[inline]
