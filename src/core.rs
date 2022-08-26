@@ -19,6 +19,8 @@ pub enum Event {
 	LoadRom(PathBuf),
 	ChangeOpcodesPerFrame(u32),
 	Exit,
+	ChangeFrequency(f32),
+	ChangeVolume(f32),
 }
 
 impl fmt::Display for Event {
@@ -176,7 +178,8 @@ pub struct Core {
 	state: CoreState,
 	sleep_error_millis: f64,
 	state_updater: single_value_channel::Updater<CoreState>,
-	events: crossbeam_channel::Receiver<Event>,
+	gui_event_receiver: crossbeam_channel::Receiver<Event>,
+	sound_event_sender: crossbeam_channel::Sender<crate::sound::Event>,
 }
 
 impl Core {
@@ -185,20 +188,24 @@ impl Core {
 	) -> (
 		single_value_channel::Receiver<CoreState>,
 		crossbeam_channel::Sender<Event>,
+		Option<cpal::Stream>,
 	) {
 		//TODO have better starting screen
 		let state = CoreState::new(PixelBuf::new([BASE_WIDTH, BASE_HEIGHT]));
-		let (state_receiver, state_updater) =
+		let (core_state_receiver, core_state_updater) =
 			single_value_channel::channel_starting_with(state.clone());
 
-		let (event_sender, event_receiver) = crossbeam_channel::unbounded();
+		let (gui_event_sender, gui_event_receiver) = crossbeam_channel::unbounded();
+
+		let (sound_state_receiver, sound_event_sender, stream) = crate::sound::create_and_run();
 
 		let mut core = Self {
 			ctx,
 			state,
 			sleep_error_millis: 0.0,
-			state_updater,
-			events: event_receiver,
+			state_updater: core_state_updater,
+			gui_event_receiver,
+			sound_event_sender,
 		};
 
 		core.initialise();
@@ -207,7 +214,7 @@ impl Core {
 			core.run();
 		});
 
-		(state_receiver, event_sender)
+		(core_state_receiver, gui_event_sender, stream)
 	}
 
 	fn initialise(&mut self) {
@@ -341,12 +348,13 @@ impl Core {
 	fn handle_events(&mut self) {
 		let mut event_handled = false;
 
-		while let Ok(event) = self.events.try_recv() {
+		while let Ok(event) = self.gui_event_receiver.try_recv() {
 			trace!("Handling event: {}", event);
 
 			match event {
 				Event::ChangeRunning(running) => {
 					self.state.running = running;
+					self.send_sound_event(crate::sound::Event::ChangeEnabled(running));
 				}
 				Event::StepFrame => {
 					self.state.step_frame = true;
@@ -361,6 +369,12 @@ impl Core {
 					self.state.running = false;
 					self.state.exit_requested = true;
 				}
+				Event::ChangeFrequency(frequenycy) => {
+					self.send_sound_event(crate::sound::Event::ChangeFrequency(frequenycy));
+				}
+				Event::ChangeVolume(volume) => {
+					self.send_sound_event(crate::sound::Event::ChangeVolume(volume));
+				}
 			}
 
 			event_handled = true;
@@ -369,6 +383,16 @@ impl Core {
 		//Only update GUI if an event was handled to lower CPU usage
 		if event_handled {
 			self.update_gui();
+		}
+	}
+
+	fn send_sound_event(&mut self, event: crate::sound::Event) {
+		match self.sound_event_sender.send(event) {
+			Ok(_) => {}
+			Err(e) => {
+				error!("Error sending event: {}", e);
+				panic!("{}", e);
+			}
 		}
 	}
 
@@ -426,6 +450,9 @@ impl Core {
 		//TODO Play sound when sound timer is > 0
 		if self.state.sound_timer > 0 {
 			self.state.sound_timer -= 1;
+			self.send_sound_event(crate::sound::Event::ChangeSoundTimer(
+				self.state.sound_timer,
+			));
 		}
 	}
 

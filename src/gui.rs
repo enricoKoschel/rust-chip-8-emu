@@ -23,11 +23,12 @@ pub struct Gui {
 	events: crossbeam_channel::Sender<Event>,
 	gui_error: Option<String>,
 	last_rom_path: Option<std::path::PathBuf>,
+	stream: Option<cpal::Stream>,
 }
 
 impl Gui {
 	pub fn new(cc: &CreationContext, scale: f32, max_scale: f32) -> Self {
-		let (state_receiver, events) = core::Core::create_and_run(cc.egui_ctx.clone());
+		let (state_receiver, events, stream) = core::Core::create_and_run(cc.egui_ctx.clone());
 
 		let theme = cc
 			.integration_info
@@ -50,6 +51,7 @@ impl Gui {
 			events,
 			gui_error: None,
 			last_rom_path: None,
+			stream,
 		}
 	}
 
@@ -374,9 +376,10 @@ impl Gui {
 	fn create_new_core(&mut self, ctx: &Context) {
 		trace!("Creating new core");
 
-		let (state_receiver, events) = core::Core::create_and_run(ctx.clone());
+		let (state_receiver, events, stream) = core::Core::create_and_run(ctx.clone());
 		self.state_receiver = state_receiver;
 		self.events = events;
+		self.stream = stream;
 	}
 
 	fn check_gui_error(&mut self, ctx: &Context) {

@@ -3,6 +3,7 @@
 
 mod core;
 mod gui;
+mod sound;
 
 use eframe::egui;
 use log::{trace, warn};
