@@ -608,11 +608,13 @@ impl Core {
 				self.state.v_registers[0xF] = if borrow { 0 } else { 1 };
 			}
 			0x6 => {
-				//0x8XY6: Store the least significant bit of VX in VF and then shift VX to the right by 1.
+				//0x8XY6: Store the least significant bit of VY in VF,
+				//then shift VY to the right by 1 and store the result in VX.
 				let x = (opcode & 0x0F00) >> 8;
+				let y = (opcode & 0x00F0) >> 4;
 
-				let lsb = self.state.v_registers[x as usize] & 0x1;
-				self.state.v_registers[x as usize] >>= 1;
+				let lsb = self.state.v_registers[y as usize] & 0x1;
+				self.state.v_registers[x as usize] = self.state.v_registers[y as usize] >> 1;
 				self.state.v_registers[0xF] = lsb;
 			}
 			0x7 => {
@@ -627,11 +629,13 @@ impl Core {
 				self.state.v_registers[0xF] = if borrow { 0 } else { 1 };
 			}
 			0xE => {
-				//0x8XYE: Store the most significant bit of VX in VF and then shift VX to the left by 1.
+				//0x8XYE: Store the most significant bit of VY in VF,
+				//then shift VY to the left by 1 and store the result in VX.
 				let x = (opcode & 0x0F00) >> 8;
+				let y = (opcode & 0x00F0) >> 4;
 
 				let msb = (self.state.v_registers[x as usize] >> 7) & 0x1;
-				self.state.v_registers[x as usize] <<= 1;
+				self.state.v_registers[x as usize] = self.state.v_registers[y as usize] << 1;
 				self.state.v_registers[0xF] = msb;
 			}
 			_ => self.core_error(ErrorKind::InvalidOpcode {
