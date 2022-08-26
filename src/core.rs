@@ -409,8 +409,8 @@ impl Core {
 			self.state.keys_down_this_frame[key] = self.ctx.input().key_down(egui_key);
 		}
 
-		for _ in 0..self.state.opcodes_per_frame {
-			self.execute_opcode();
+		for opcode in 0..self.state.opcodes_per_frame {
+			self.execute_opcode(opcode == 0);
 
 			if self.should_exit() {
 				return;
@@ -429,7 +429,7 @@ impl Core {
 		}
 	}
 
-	fn execute_opcode(&mut self) {
+	fn execute_opcode(&mut self, first_in_frame: bool) {
 		let opcode = self.read_16bit_immediate();
 		trace!(
 			"Opcode: {:#06X} at {:#06X}",
@@ -453,7 +453,7 @@ impl Core {
 			0xA => self.execute_opcode_a(opcode),
 			0xB => self.execute_opcode_b(opcode),
 			0xC => self.execute_opcode_c(opcode),
-			0xD => self.execute_opcode_d(opcode),
+			0xD => self.execute_opcode_d(opcode, first_in_frame),
 			0xE => self.execute_opcode_e(opcode),
 			0xF => self.execute_opcode_f(opcode),
 			_ => unreachable!(),
@@ -683,10 +683,16 @@ impl Core {
 		self.state.v_registers[x as usize] = rand::random::<u8>() & mask;
 	}
 
-	fn execute_opcode_d(&mut self, opcode: u16) {
+	fn execute_opcode_d(&mut self, opcode: u16, first_in_frame: bool) {
 		//0xDXYN: Draw a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
 		//Each row is read starting from memory location I; The value of I does not change after the execution of this instruction.
 		//VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that does not happen
+
+		//Rerun the instruction until it is the first in a frame to simulate waiting for VBlank
+		if !first_in_frame {
+			self.state.program_counter -= 2;
+			return;
+		}
 
 		let (x, y, height) = {
 			let x = (opcode & 0x0F00) >> 8;
