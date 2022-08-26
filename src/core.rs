@@ -854,8 +854,8 @@ impl Core {
 			return false;
 		}
 
-		self.state.keys_down_this_frame[key as usize] == false
-			&& self.state.keys_down_last_frame[key as usize] == true
+		!self.state.keys_down_this_frame[key as usize]
+			&& self.state.keys_down_last_frame[key as usize]
 	}
 
 	#[inline]
