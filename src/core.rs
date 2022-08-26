@@ -118,8 +118,8 @@ pub struct CoreState {
 	pub rom_size: Option<usize>,
 	pub opcodes_per_frame: u32,
 	pub exit_requested: bool,
-	pub keys_down_this_frame: [bool; 16],
-	pub keys_down_last_frame: [bool; 16],
+	pub keys_down: [bool; 16],
+	pub previous_keys_down: [bool; 16],
 }
 
 impl CoreState {
@@ -167,8 +167,8 @@ impl CoreState {
 			rom_size: None,
 			opcodes_per_frame: 20,
 			exit_requested: false,
-			keys_down_this_frame: [false; 16],
-			keys_down_last_frame: [false; 16],
+			keys_down: [false; 16],
+			previous_keys_down: [false; 16],
 		}
 	}
 }
@@ -426,13 +426,6 @@ impl Core {
 	}
 
 	fn step_frame(&mut self) {
-		self.state.keys_down_last_frame = self.state.keys_down_this_frame;
-
-		for key in 0..16 {
-			let egui_key = self.state.key_map[key];
-			self.state.keys_down_this_frame[key] = self.ctx.input().key_down(egui_key);
-		}
-
 		for opcode in 0..self.state.opcodes_per_frame {
 			self.execute_opcode(opcode == 0);
 
@@ -441,6 +434,15 @@ impl Core {
 			}
 		}
 		self.update_timers();
+	}
+
+	fn update_keys(&mut self) {
+		self.state.previous_keys_down = self.state.keys_down;
+
+		for key in 0..16 {
+			let egui_key = self.state.key_map[key];
+			self.state.keys_down[key] = self.ctx.input().key_down(egui_key);
+		}
 	}
 
 	fn update_timers(&mut self) {
@@ -457,6 +459,8 @@ impl Core {
 	}
 
 	fn execute_opcode(&mut self, first_in_frame: bool) {
+		self.update_keys();
+
 		let opcode = self.read_16bit_immediate();
 		trace!(
 			"Opcode: {:#06X} at {:#06X}",
@@ -872,7 +876,7 @@ impl Core {
 			return false;
 		}
 
-		self.state.keys_down_this_frame[key as usize]
+		self.state.keys_down[key as usize]
 	}
 
 	fn was_key_released(&mut self, key: u8) -> bool {
@@ -881,8 +885,7 @@ impl Core {
 			return false;
 		}
 
-		!self.state.keys_down_this_frame[key as usize]
-			&& self.state.keys_down_last_frame[key as usize]
+		!self.state.keys_down[key as usize] && self.state.previous_keys_down[key as usize]
 	}
 
 	#[inline]
