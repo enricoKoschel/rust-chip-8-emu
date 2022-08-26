@@ -146,7 +146,7 @@ impl Gui {
 						ui.separator();
 
 						if ui.button("Close").clicked() {
-							frame.close();
+							frame.quit();
 						}
 					});
 				});
