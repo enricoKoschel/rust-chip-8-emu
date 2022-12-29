@@ -2,7 +2,7 @@ use crate::core;
 use crate::core::Event;
 use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
-use log::{error, trace};
+use log::{error, trace, warn};
 use pixel_buf::PixelBuf;
 use std::thread;
 
@@ -27,7 +27,7 @@ pub struct Gui {
 }
 
 impl Gui {
-	pub fn new(cc: &CreationContext, scale: f32, max_scale: f32) -> Self {
+	pub fn new(cc: &CreationContext) -> Self {
 		let (state_receiver, events, stream) = core::Core::create_and_run(cc.egui_ctx.clone());
 
 		let theme = cc
@@ -42,8 +42,8 @@ impl Gui {
 			show_rom_window: true,
 			show_options_window: false,
 			show_info_window: false,
-			scale,
-			max_scale,
+			scale: 0.0,
+			max_scale: 0.0,
 			transparent_frame: egui::containers::Frame::default(),
 			frame_no_margin: egui::containers::Frame::default(),
 			menu_bar_height: 0.0,
@@ -56,14 +56,7 @@ impl Gui {
 	}
 
 	fn setup(&mut self, ctx: &Context, frame: &mut Frame) {
-		match self.theme {
-			eframe::Theme::Dark => {
-				ctx.set_visuals(egui::Visuals::dark());
-			}
-			eframe::Theme::Light => {
-				ctx.set_visuals(egui::Visuals::light());
-			}
-		}
+		self.update_theme(ctx);
 
 		self.transparent_frame = {
 			let mut transparent_frame = egui::Frame::window(&ctx.style());
@@ -90,7 +83,56 @@ impl Gui {
 			ctx.set_style(style);
 		}
 
+		self.setup_window(frame);
+	}
+
+	fn get_monitor_size(frame: &Frame) -> (f32, f32) {
+		match frame.info().window_info.monitor_size {
+			Some(size) if size != egui::Vec2::new(0.0, 0.0) => (size.x, size.y),
+			_ => {
+				warn!("No or zero sized monitor found, using default size");
+
+				(
+					core::BASE_WIDTH as f32 * core::DEFAULT_SCALE,
+					core::BASE_HEIGHT as f32 * core::DEFAULT_SCALE,
+				)
+			}
+		}
+	}
+
+	fn setup_window(&mut self, frame: &mut Frame) {
+		let (screen_width, screen_height) = Gui::get_monitor_size(frame);
+		trace!("Screen size: {}x{}", screen_width, screen_height);
+
+		//Add 30% so max scale cannot be reached by resizing the window
+		self.max_scale = (screen_width / core::BASE_WIDTH as f32).round() * 1.3;
+		self.scale = (self.max_scale / 1.8).round();
+		trace!("Max scale: {}, scale: {}", self.max_scale, self.scale);
+
 		self.resize_to_scale(frame);
+
+		let window_size = {
+			let scale = self.scale;
+			self.latest_frame().get_scaled_size(scale)
+		};
+		let monitor_size = Gui::get_monitor_size(frame);
+
+		let screen_center = egui::Pos2::new(
+			(monitor_size.0 / 2.0) - (window_size[0] / 2.0),
+			(monitor_size.1 / 2.0) - (window_size[1] / 2.0),
+		);
+		frame.set_window_pos(screen_center);
+	}
+
+	fn update_theme(&self, ctx: &Context) {
+		match self.theme {
+			eframe::Theme::Dark => {
+				ctx.set_visuals(egui::Visuals::dark());
+			}
+			eframe::Theme::Light => {
+				ctx.set_visuals(egui::Visuals::light());
+			}
+		}
 	}
 
 	fn latest_frame(&mut self) -> &PixelBuf {

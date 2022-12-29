@@ -197,7 +197,7 @@ impl Core {
 
 		let (gui_event_sender, gui_event_receiver) = crossbeam_channel::unbounded();
 
-		let (sound_state_receiver, sound_event_sender, stream) = crate::sound::create_and_run();
+		let (_, sound_event_sender, stream) = crate::sound::create_and_run();
 
 		let mut core = Self {
 			ctx,
@@ -625,7 +625,7 @@ impl Core {
 					.overflowing_add(self.state.v_registers[y as usize]);
 
 				self.state.v_registers[x as usize] = result;
-				self.state.v_registers[0xF] = if carry { 1 } else { 0 };
+				self.state.v_registers[0xF] = carry as u8;
 			}
 			0x5 => {
 				//0x8XY5: Subtract VY from VX. Set VF to 0 if there's a borrow, 1 otherwise.
@@ -636,7 +636,7 @@ impl Core {
 					.overflowing_sub(self.state.v_registers[y as usize]);
 
 				self.state.v_registers[x as usize] = result;
-				self.state.v_registers[0xF] = if borrow { 0 } else { 1 };
+				self.state.v_registers[0xF] = !borrow as u8;
 			}
 			0x6 => {
 				//0x8XY6: Store the least significant bit of VY in VF,
@@ -657,7 +657,7 @@ impl Core {
 					.overflowing_sub(self.state.v_registers[x as usize]);
 
 				self.state.v_registers[x as usize] = result;
-				self.state.v_registers[0xF] = if borrow { 0 } else { 1 };
+				self.state.v_registers[0xF] = !borrow as u8;
 			}
 			0xE => {
 				//0x8XYE: Store the most significant bit of VY in VF,
@@ -751,11 +751,7 @@ impl Core {
 				}
 
 				let pixel_value = (raw_byte >> (7 - col)) & 0x1;
-				let old_pixel_value = if self.state.image[(x, y)] == Rgba::WHITE {
-					1
-				} else {
-					0
-				};
+				let old_pixel_value = (self.state.image[(x, y)] == Rgba::WHITE) as u8;
 				self.state.image[(x, y)] = if (pixel_value ^ old_pixel_value) == 1 {
 					Rgba::WHITE
 				} else {
