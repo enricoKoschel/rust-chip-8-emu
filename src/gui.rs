@@ -190,7 +190,7 @@ impl Gui {
 						ui.separator();
 
 						if ui.button("Close").clicked() {
-							frame.quit();
+							frame.close();
 						}
 					});
 				});
@@ -370,7 +370,7 @@ impl Gui {
 				"game_image",
 				egui::ColorImage::from_rgba_unmultiplied(size, &buf),
 			)
-			.with_texture_filter(egui::TextureFilter::Nearest)
+			.with_options(egui::TextureOptions::NEAREST)
 		};
 
 		let central_panel = egui::CentralPanel::default()
