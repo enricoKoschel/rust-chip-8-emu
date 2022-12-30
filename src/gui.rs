@@ -170,18 +170,6 @@ impl Gui {
 		}
 	}
 
-	fn show_menu_bar(&mut self, ui: &mut egui::Ui, frame: &mut Frame) {
-		egui::menu::bar(ui, |ui| {
-			ui.add_enabled_ui(!self.error_occurred(), |ui| {
-				ui.menu_button("File", |ui| {
-					if ui.button("Close").clicked() {
-						frame.close();
-					}
-				});
-			});
-		});
-	}
-
 	fn show_rom_section(&mut self, ctx: &Context, ui: &mut egui::Ui) {
 		egui::CollapsingHeader::new("ROM")
 			.default_open(true)
@@ -375,7 +363,7 @@ impl Gui {
 			.exact_width(350.0)
 			.frame(self.frame_no_margin)
 			.show(ctx, |ui| {
-				self.show_menu_bar(ui, frame);
+				ui.add_space(10.0);
 				ui.separator();
 				self.show_rom_section(ctx, ui);
 				ui.separator();
