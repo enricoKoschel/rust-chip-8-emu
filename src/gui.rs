@@ -2,11 +2,22 @@ use crate::core;
 use crate::core::Event;
 use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
+use egui_dnd::DragDropUi;
 use log::{error, trace, warn};
 use pixel_buf::PixelBuf;
 use std::thread;
 
 const FONT_SIZE: f32 = 1.3;
+
+#[derive(Hash, Clone)]
+enum SideMenuSection {
+	Rom,
+	Options,
+	Info,
+}
+
+#[derive(Hash, Clone)]
+struct SideMenuDragDropItem(SideMenuSection);
 
 pub struct Gui {
 	theme: eframe::Theme,
@@ -21,6 +32,9 @@ pub struct Gui {
 	last_rom_path: Option<std::path::PathBuf>,
 	stream: Option<cpal::Stream>,
 	side_menu_width: f32,
+	side_menu_sections: Vec<SideMenuDragDropItem>,
+	side_menu_drag_state: DragDropUi,
+	scale_locked: bool,
 }
 
 impl Gui {
@@ -33,6 +47,7 @@ impl Gui {
 			.unwrap_or(eframe::Theme::Dark);
 		trace!("Theme: {:?}", theme);
 
+		use SideMenuSection::{Info, Options, Rom};
 		Gui {
 			theme,
 			first_frame: true,
@@ -46,6 +61,13 @@ impl Gui {
 			last_rom_path: None,
 			stream,
 			side_menu_width: 0.0,
+			side_menu_sections: vec![
+				SideMenuDragDropItem(Rom),
+				SideMenuDragDropItem(Options),
+				SideMenuDragDropItem(Info),
+			],
+			side_menu_drag_state: DragDropUi::default(),
+			scale_locked: false,
 		}
 	}
 
@@ -156,6 +178,10 @@ impl Gui {
 	}
 
 	fn update_scale(&mut self, ctx: &Context) {
+		if self.scale_locked {
+			return;
+		}
+
 		let mut screen_size = ctx.input().screen_rect.size();
 		screen_size.x -= self.side_menu_width;
 
@@ -168,6 +194,59 @@ impl Gui {
 			self.scale = new_scale;
 			trace!("New scale: {}", self.scale);
 		}
+	}
+
+	fn add_side_menu(&mut self, ctx: &Context, frame: &mut Frame) {
+		let side_menu = egui::SidePanel::right("side_menu")
+			.exact_width(400.0)
+			.frame(self.frame_no_margin)
+			.show(ctx, |ui| {
+				self.show_side_menu_sections(ctx, frame, ui);
+			});
+
+		self.side_menu_width = side_menu.response.rect.size().x;
+	}
+
+	fn show_side_menu_sections(&mut self, ctx: &Context, frame: &mut Frame, ui: &mut egui::Ui) {
+		let mut drag_state = self.side_menu_drag_state.clone();
+
+		ui.add_space(10.0);
+		ui.separator();
+
+		let drag_response = drag_state.ui::<SideMenuDragDropItem>(
+			ui,
+			self.side_menu_sections.clone().iter_mut(),
+			|item, ui, handle| {
+				ui.horizontal(|ui| {
+					handle.ui(ui, item, |ui| {
+						ui.label("↕");
+					});
+
+					use SideMenuSection::{Info, Options, Rom};
+					match item.0 {
+						Info => {
+							self.show_info_section(ctx, ui);
+						}
+						Options => {
+							self.show_options_section(ctx, frame, ui);
+						}
+						Rom => {
+							self.show_rom_section(ctx, ui);
+						}
+					}
+				});
+
+				ui.separator();
+			},
+		);
+
+		self.scale_locked = drag_response.current_drag.is_some();
+
+		if let Some(response) = drag_response.completed {
+			egui_dnd::utils::shift_vec(response.from, response.to, &mut self.side_menu_sections);
+		}
+
+		self.side_menu_drag_state = drag_state;
 	}
 
 	fn show_rom_section(&mut self, ctx: &Context, ui: &mut egui::Ui) {
@@ -221,49 +300,80 @@ impl Gui {
 	}
 
 	fn show_options_section(&mut self, ctx: &Context, frame: &mut Frame, ui: &mut egui::Ui) {
-		egui::CollapsingHeader::new("Options").show(ui, |ui| {
-			ui.add_enabled_ui(!self.error_occurred(), |ui| {
-				ui.horizontal(|ui| {
-					let scale_slider = ui.add(
-						egui::Slider::new(&mut self.scale, 1.0..=self.max_scale).text("Scale"),
+		egui::CollapsingHeader::new("Options")
+			.default_open(true)
+			.show(ui, |ui| {
+				ui.add_enabled_ui(!self.error_occurred(), |ui| {
+					ui.horizontal(|ui| {
+						let scale_slider = ui.add(
+							egui::Slider::new(&mut self.scale, 1.0..=self.max_scale).text("Scale"),
+						);
+
+						let button = ui.button("Snap to scale");
+						if button.clicked() || scale_slider.changed() {
+							self.resize_to_scale(frame);
+						}
+					});
+
+					ui.separator();
+
+					let state = self.state_receiver.latest();
+
+					let mut opcodes_per_frame = state.opcodes_per_frame;
+					let slider = ui.add(
+						egui::Slider::new(&mut opcodes_per_frame, 1..=100)
+							.text("Opcodes per frame"),
 					);
 
-					let button = ui.button("Snap to scale");
-					if button.clicked() || scale_slider.changed() {
-						self.resize_to_scale(frame);
+					if slider.changed() {
+						self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
 					}
-				});
-
-				ui.separator();
-
-				let state = self.state_receiver.latest();
-
-				let mut opcodes_per_frame = state.opcodes_per_frame;
-				let slider = ui.add(
-					egui::Slider::new(&mut opcodes_per_frame, 1..=100).text("Opcodes per frame"),
-				);
-
-				if slider.changed() {
-					self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
-				}
-				if slider.double_clicked() {
-					self.send_event(Event::ChangeOpcodesPerFrame(20));
-				}
-
-				self.show_running_and_step_frame(ui);
-
-				ui.separator();
-
-				ui.horizontal(|ui| {
-					if ui.button("Reset").clicked() {
-						self.reset_core(ctx);
+					if slider.double_clicked() {
+						self.send_event(Event::ChangeOpcodesPerFrame(20));
 					}
-					if ui.button("Reset ROM").clicked() {
-						self.reset_core_keep_rom(ctx);
-					}
+
+					self.show_running_and_step_frame(ui);
+
+					ui.separator();
+
+					ui.horizontal(|ui| {
+						if ui.button("Reset").clicked() {
+							self.reset_core(ctx);
+						}
+						if ui.button("Reset ROM").clicked() {
+							self.reset_core_keep_rom(ctx);
+						}
+					});
 				});
 			});
-		});
+	}
+
+	fn show_info_section(&mut self, ctx: &Context, ui: &mut egui::Ui) {
+		egui::CollapsingHeader::new("Info")
+			.default_open(true)
+			.show(ui, |ui| {
+				ui.add_enabled_ui(!self.error_occurred(), |ui| {
+					let state = self.state_receiver.latest();
+
+					ui.label(format!("Current frame (core): {}", state.current_frame));
+
+					ui.label(format!(
+						"Actual frame time (core): {:.3}ms",
+						state.actual_frame_time.as_secs_f64() * 1000.0
+					));
+					ui.label(format!(
+						"Frame time with sleep (core): {:.3}ms",
+						state.frame_time_with_sleep.as_secs_f64() * 1000.0
+					));
+					ui.label(format!("FPS (core): {:.3}", state.fps));
+
+					ui.separator();
+
+					let gui_millis = ctx.input().unstable_dt * 1000.0;
+					ui.label(format!("Frame time (GUI): {:.3}ms", gui_millis));
+					ui.label(format!("FPS (GUI): {:.3}", 1000.0 / gui_millis));
+				});
+			});
 	}
 
 	fn reset_core(&mut self, ctx: &Context) {
@@ -286,32 +396,6 @@ impl Gui {
 			self.send_event(Event::LoadRom(path));
 			self.send_event(Event::ChangeRunning(true));
 		}
-	}
-
-	fn show_info_section(&mut self, ctx: &Context, ui: &mut egui::Ui) {
-		egui::CollapsingHeader::new("Info").show(ui, |ui| {
-			ui.add_enabled_ui(!self.error_occurred(), |ui| {
-				let state = self.state_receiver.latest();
-
-				ui.label(format!("Current frame (core): {}", state.current_frame));
-
-				ui.label(format!(
-					"Actual frame time (core): {:.3}ms",
-					state.actual_frame_time.as_secs_f64() * 1000.0
-				));
-				ui.label(format!(
-					"Frame time with sleep (core): {:.3}ms",
-					state.frame_time_with_sleep.as_secs_f64() * 1000.0
-				));
-				ui.label(format!("FPS (core): {:.3}", state.fps));
-
-				ui.separator();
-
-				let gui_millis = ctx.input().unstable_dt * 1000.0;
-				ui.label(format!("Frame time (GUI): {:.3}ms", gui_millis));
-				ui.label(format!("FPS (GUI): {:.3}", 1000.0 / gui_millis));
-			});
-		});
 	}
 
 	fn add_game_screen(&mut self, ctx: &Context) {
@@ -356,24 +440,6 @@ impl Gui {
 		});
 
 		//TODO Add step opcode button
-	}
-
-	fn add_side_menu(&mut self, ctx: &Context, frame: &mut Frame) {
-		let side_menu = egui::SidePanel::right("side_menu")
-			.exact_width(350.0)
-			.frame(self.frame_no_margin)
-			.show(ctx, |ui| {
-				ui.add_space(10.0);
-				ui.separator();
-				self.show_rom_section(ctx, ui);
-				ui.separator();
-				self.show_options_section(ctx, frame, ui);
-				ui.separator();
-				self.show_info_section(ctx, ui);
-				ui.separator();
-			});
-
-		self.side_menu_width = side_menu.response.rect.size().x;
 	}
 
 	fn check_core_error(&mut self, ctx: &Context) {

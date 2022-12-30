@@ -20,5 +20,6 @@ pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/", rev = "93a459
 rand = "0.8.5"
 rfd = "0.10.0"
 log = "0.4.17"
-env_logger = "0.9.0"
+env_logger = "0.10.0"
 cpal = "0.14.0"
+egui_dnd = "0.1.0"
