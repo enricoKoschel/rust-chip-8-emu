@@ -309,6 +309,7 @@ impl Gui {
 							egui::Slider::new(&mut self.scale, 1.0..=self.max_scale).text("Scale"),
 						);
 
+						//TODO Snap to scale after resizing the window and remove this button
 						let button = ui.button("Snap to scale");
 						if button.clicked() || scale_slider.changed() {
 							self.resize_to_scale(frame);
