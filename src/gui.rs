@@ -15,7 +15,6 @@ pub struct Gui {
 	max_scale: f32,
 	transparent_frame: egui::containers::Frame,
 	frame_no_margin: egui::containers::Frame,
-	menu_bar_height: f32,
 	state_receiver: single_value_channel::Receiver<core::CoreState>,
 	events: crossbeam_channel::Sender<Event>,
 	gui_error: Option<String>,
@@ -41,7 +40,6 @@ impl Gui {
 			max_scale: 0.0,
 			transparent_frame: egui::containers::Frame::default(),
 			frame_no_margin: egui::containers::Frame::default(),
-			menu_bar_height: 0.0,
 			state_receiver,
 			events,
 			gui_error: None,
@@ -117,7 +115,6 @@ impl Gui {
 			let mut size = self.latest_frame().get_scaled_size(scale);
 
 			size[0] += self.side_menu_width;
-			size[1] += self.menu_bar_height;
 
 			size
 		};
@@ -154,14 +151,13 @@ impl Gui {
 		trace!("Resize window to {}x{}", scaled_size[0], scaled_size[1]);
 		frame.set_window_size(egui::Vec2::new(
 			scaled_size[0] + self.side_menu_width,
-			scaled_size[1] + self.menu_bar_height,
+			scaled_size[1],
 		));
 	}
 
 	fn update_scale(&mut self, ctx: &Context) {
 		let mut screen_size = ctx.input().screen_rect.size();
 		screen_size.x -= self.side_menu_width;
-		screen_size.y -= self.menu_bar_height;
 
 		let scale_x = screen_size.x / core::BASE_WIDTH as f32;
 		let scale_y = screen_size.y / core::BASE_HEIGHT as f32;
@@ -174,20 +170,16 @@ impl Gui {
 		}
 	}
 
-	fn add_menu_bar(&mut self, ctx: &Context, frame: &mut Frame) {
-		let top_bottom_panel = egui::TopBottomPanel::top("menubar_container").show(ctx, |ui| {
-			egui::menu::bar(ui, |ui| {
-				ui.add_enabled_ui(!self.error_occurred(), |ui| {
-					ui.menu_button("File", |ui| {
-						if ui.button("Close").clicked() {
-							frame.close();
-						}
-					});
+	fn show_menu_bar(&mut self, ui: &mut egui::Ui, frame: &mut Frame) {
+		egui::menu::bar(ui, |ui| {
+			ui.add_enabled_ui(!self.error_occurred(), |ui| {
+				ui.menu_button("File", |ui| {
+					if ui.button("Close").clicked() {
+						frame.close();
+					}
 				});
 			});
 		});
-
-		self.menu_bar_height = top_bottom_panel.response.rect.size().y;
 	}
 
 	fn show_rom_section(&mut self, ctx: &Context, ui: &mut egui::Ui) {
@@ -308,7 +300,7 @@ impl Gui {
 		}
 	}
 
-	fn show_info_section(&mut self, ui: &mut egui::Ui, ctx: &Context) {
+	fn show_info_section(&mut self, ctx: &Context, ui: &mut egui::Ui) {
 		egui::CollapsingHeader::new("Info").show(ui, |ui| {
 			ui.add_enabled_ui(!self.error_occurred(), |ui| {
 				let state = self.state_receiver.latest();
@@ -383,11 +375,13 @@ impl Gui {
 			.exact_width(350.0)
 			.frame(self.frame_no_margin)
 			.show(ctx, |ui| {
+				self.show_menu_bar(ui, frame);
+				ui.separator();
 				self.show_rom_section(ctx, ui);
 				ui.separator();
 				self.show_options_section(ctx, frame, ui);
 				ui.separator();
-				self.show_info_section(ui, ctx);
+				self.show_info_section(ctx, ui);
 				ui.separator();
 			});
 
@@ -458,10 +452,10 @@ impl Gui {
 
 impl eframe::App for Gui {
 	fn update(&mut self, ctx: &Context, frame: &mut Frame) {
-		self.add_menu_bar(ctx, frame);
 		self.add_side_menu(ctx, frame);
 
-		//Has to be done after the menu bar is added
+		//Setup has to be called after `add_side_menu()`
+		//because this sets `self.side_menu_width` to the correct value
 		if self.first_frame {
 			self.first_frame = false;
 
