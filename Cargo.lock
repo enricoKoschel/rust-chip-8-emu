@@ -471,6 +471,7 @@ dependencies = [
  "crossbeam-channel",
  "eframe",
  "egui",
+ "egui-bind",
  "egui_dnd",
  "egui_extras",
  "env_logger",
@@ -941,6 +942,15 @@ dependencies = [
  "epaint",
  "nohash-hasher",
  "tracing",
+]
+
+[[package]]
+name = "egui-bind"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb7ca2ca48595668b1b5344b6846586cd1dcbc5b71040971c16805d4bb4e1e87"
+dependencies = [
+ "egui",
 ]
 
 [[package]]

@@ -1,4 +1,5 @@
 use eframe::egui;
+use egui_bind::BindTarget;
 use log::{error, trace, warn};
 use pixel_buf::{PixelBuf, Rgba};
 use std::fmt::{Debug, Formatter};
@@ -12,6 +13,31 @@ pub const BASE_WIDTH: usize = 64;
 pub const BASE_HEIGHT: usize = 32;
 pub const DEFAULT_SCALE: f32 = 4.0;
 
+const DEFAULT_KEYMAP: [Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16] = {
+	use egui::Key::*;
+	use egui::Modifiers;
+	use egui_bind::KeyOrPointer;
+
+	[
+		Some((KeyOrPointer::Key(X), Modifiers::NONE)),    //0
+		Some((KeyOrPointer::Key(Num1), Modifiers::NONE)), //1
+		Some((KeyOrPointer::Key(Num2), Modifiers::NONE)), //2
+		Some((KeyOrPointer::Key(Num3), Modifiers::NONE)), //3
+		Some((KeyOrPointer::Key(Q), Modifiers::NONE)),    //4
+		Some((KeyOrPointer::Key(W), Modifiers::NONE)),    //5
+		Some((KeyOrPointer::Key(E), Modifiers::NONE)),    //6
+		Some((KeyOrPointer::Key(A), Modifiers::NONE)),    //7
+		Some((KeyOrPointer::Key(S), Modifiers::NONE)),    //8
+		Some((KeyOrPointer::Key(D), Modifiers::NONE)),    //9
+		Some((KeyOrPointer::Key(Y), Modifiers::NONE)),    //A
+		Some((KeyOrPointer::Key(C), Modifiers::NONE)),    //B
+		Some((KeyOrPointer::Key(Num4), Modifiers::NONE)), //C
+		Some((KeyOrPointer::Key(R), Modifiers::NONE)),    //D
+		Some((KeyOrPointer::Key(F), Modifiers::NONE)),    //E
+		Some((KeyOrPointer::Key(V), Modifiers::NONE)),    //F
+	]
+};
+
 #[derive(Debug)]
 pub enum Event {
 	ChangeRunning(bool),
@@ -21,6 +47,7 @@ pub enum Event {
 	Exit,
 	ChangeFrequency(f32),
 	ChangeVolume(f32),
+	ChangeKeymap([Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16]),
 }
 
 impl fmt::Display for Event {
@@ -113,7 +140,7 @@ pub struct CoreState {
 	pub call_stack: Vec<u16>,
 	pub delay_timer: u8,
 	pub sound_timer: u8,
-	pub key_map: [egui::Key; 16],
+	pub keymap: [Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16],
 	pub rom_name: Option<String>,
 	pub rom_size: Option<usize>,
 	pub opcodes_per_frame: u32,
@@ -124,26 +151,6 @@ pub struct CoreState {
 
 impl CoreState {
 	pub fn new(image: PixelBuf) -> Self {
-		//TODO Get keymap from GUI
-		let key_map = [
-			egui::Key::Num0,
-			egui::Key::Num1,
-			egui::Key::Num2,
-			egui::Key::Num3,
-			egui::Key::Num4,
-			egui::Key::Num5,
-			egui::Key::Num6,
-			egui::Key::Num7,
-			egui::Key::Num8,
-			egui::Key::Num9,
-			egui::Key::A,
-			egui::Key::B,
-			egui::Key::C,
-			egui::Key::D,
-			egui::Key::E,
-			egui::Key::F,
-		];
-
 		Self {
 			image,
 			current_frame: 0,
@@ -162,7 +169,7 @@ impl CoreState {
 			call_stack: vec![],
 			delay_timer: 0,
 			sound_timer: 0,
-			key_map,
+			keymap: DEFAULT_KEYMAP,
 			rom_name: None,
 			rom_size: None,
 			opcodes_per_frame: 20,
@@ -369,11 +376,14 @@ impl Core {
 					self.state.running = false;
 					self.state.exit_requested = true;
 				}
-				Event::ChangeFrequency(frequenycy) => {
-					self.send_sound_event(crate::sound::Event::ChangeFrequency(frequenycy));
+				Event::ChangeFrequency(frequency) => {
+					self.send_sound_event(crate::sound::Event::ChangeFrequency(frequency));
 				}
 				Event::ChangeVolume(volume) => {
 					self.send_sound_event(crate::sound::Event::ChangeVolume(volume));
+				}
+				Event::ChangeKeymap(keymap) => {
+					self.state.keymap = keymap;
 				}
 			}
 
@@ -440,8 +450,7 @@ impl Core {
 		self.state.previous_keys_down = self.state.keys_down;
 
 		for key in 0..16 {
-			let egui_key = self.state.key_map[key];
-			self.state.keys_down[key] = self.ctx.input().key_down(egui_key);
+			self.state.keys_down[key] = self.state.keymap[key].down(self.ctx.input());
 		}
 	}
 
@@ -449,7 +458,7 @@ impl Core {
 		if self.state.delay_timer > 0 {
 			self.state.delay_timer -= 1;
 		}
-		//TODO Play sound when sound timer is > 0
+
 		if self.state.sound_timer > 0 {
 			self.state.sound_timer -= 1;
 			self.send_sound_event(crate::sound::Event::ChangeSoundTimer(

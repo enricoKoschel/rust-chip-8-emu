@@ -1,7 +1,9 @@
 use crate::core;
-use crate::core::Event;
+use crate::core::{CoreState, Event};
 use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
+use egui::{RichText, Widget};
+use egui_bind::Bind;
 use egui_dnd::DragDropUi;
 use log::{error, trace, warn};
 use pixel_buf::PixelBuf;
@@ -14,6 +16,7 @@ enum SideMenuSection {
 	Rom,
 	Options,
 	Info,
+	Keymap,
 }
 
 #[derive(Hash, Clone)]
@@ -26,7 +29,7 @@ pub struct Gui {
 	max_scale: f32,
 	transparent_frame: egui::containers::Frame,
 	frame_no_margin: egui::containers::Frame,
-	state_receiver: single_value_channel::Receiver<core::CoreState>,
+	state_receiver: single_value_channel::Receiver<CoreState>,
 	events: crossbeam_channel::Sender<Event>,
 	gui_error: Option<String>,
 	last_rom_path: Option<std::path::PathBuf>,
@@ -47,7 +50,7 @@ impl Gui {
 			.unwrap_or(eframe::Theme::Dark);
 		trace!("Theme: {:?}", theme);
 
-		use SideMenuSection::{Info, Options, Rom};
+		use SideMenuSection::*;
 		Gui {
 			theme,
 			first_frame: true,
@@ -65,6 +68,7 @@ impl Gui {
 				SideMenuDragDropItem(Rom),
 				SideMenuDragDropItem(Options),
 				SideMenuDragDropItem(Info),
+				SideMenuDragDropItem(Keymap),
 			],
 			side_menu_drag_state: DragDropUi::default(),
 			scale_locked: false,
@@ -161,10 +165,11 @@ impl Gui {
 	}
 
 	fn latest_frame(&mut self) -> &PixelBuf {
-		&self.state_receiver.latest().image
+		&self.core().image
 	}
 
 	fn resize_to_scale(&mut self, frame: &mut Frame) {
+		//TODO Snap to scale after resizing the window
 		let scaled_size = {
 			let scale = self.scale;
 			self.latest_frame().get_scaled_size(scale)
@@ -207,7 +212,7 @@ impl Gui {
 		self.side_menu_width = side_menu.response.rect.size().x;
 	}
 
-	fn show_side_menu_sections(&mut self, ctx: &Context, frame: &mut Frame, ui: &mut egui::Ui) {
+	fn show_side_menu_sections(&mut self, ctx: &Context, _frame: &mut Frame, ui: &mut egui::Ui) {
 		let mut drag_state = self.side_menu_drag_state.clone();
 
 		ui.add_space(10.0);
@@ -222,16 +227,19 @@ impl Gui {
 						ui.label("↕");
 					});
 
-					use SideMenuSection::{Info, Options, Rom};
+					use SideMenuSection::*;
 					match item.0 {
 						Info => {
 							self.show_info_section(ctx, ui);
 						}
 						Options => {
-							self.show_options_section(ctx, frame, ui);
+							self.show_options_section(ctx, ui);
 						}
 						Rom => {
 							self.show_rom_section(ctx, ui);
+						}
+						Keymap => {
+							self.show_keymap_section(ui);
 						}
 					}
 				});
@@ -256,11 +264,11 @@ impl Gui {
 			.default_open(true)
 			.show(ui, |ui| {
 				ui.add_enabled_ui(!self.error_occurred(), |ui| {
-					let state = self.state_receiver.latest();
+					let core = self.core();
 
-					let rom_name = state.rom_name.clone().unwrap_or_else(|| "---".into());
+					let rom_name = core.rom_name.clone().unwrap_or_else(|| "---".into());
 					let rom_size = {
-						let rom_size = state.rom_size.unwrap_or(0);
+						let rom_size = core.rom_size.unwrap_or(0);
 
 						if rom_size == 0 {
 							"---".into()
@@ -282,7 +290,7 @@ impl Gui {
 
 						if let Some(path) = path {
 							trace!("ROM file picked: {}", path.display());
-							if state.rom_name.is_some() {
+							if core.rom_name.is_some() {
 								//Reset core if a rom was already loaded
 								self.reset_core(ctx);
 							}
@@ -301,30 +309,16 @@ impl Gui {
 			});
 	}
 
-	fn show_options_section(&mut self, ctx: &Context, frame: &mut Frame, ui: &mut egui::Ui) {
+	fn show_options_section(&mut self, ctx: &Context, ui: &mut egui::Ui) {
 		egui::CollapsingHeader::new("Options")
 			.default_open(true)
 			.show(ui, |ui| {
 				ui.add_enabled_ui(!self.error_occurred(), |ui| {
-					ui.horizontal(|ui| {
-						let scale_slider = ui.add(
-							egui::Slider::new(&mut self.scale, 1.0..=self.max_scale).text("Scale"),
-						);
+					let core = self.core();
 
-						//TODO Snap to scale after resizing the window and remove this button
-						let button = ui.button("Snap to scale");
-						if button.clicked() || scale_slider.changed() {
-							self.resize_to_scale(frame);
-						}
-					});
-
-					ui.separator();
-
-					let state = self.state_receiver.latest();
-
-					let mut opcodes_per_frame = state.opcodes_per_frame;
+					let mut opcodes_per_frame = core.opcodes_per_frame;
 					let slider = ui.add(
-						egui::Slider::new(&mut opcodes_per_frame, 1..=100)
+						egui::Slider::new(&mut opcodes_per_frame, 1..=200)
 							.text("Opcodes per frame"),
 					);
 
@@ -356,19 +350,19 @@ impl Gui {
 			.default_open(true)
 			.show(ui, |ui| {
 				ui.add_enabled_ui(!self.error_occurred(), |ui| {
-					let state = self.state_receiver.latest();
+					let core = self.core();
 
-					ui.label(format!("Current frame (core): {}", state.current_frame));
+					ui.label(format!("Current frame (core): {}", core.current_frame));
 
 					ui.label(format!(
 						"Actual frame time (core): {:.3}ms",
-						state.actual_frame_time.as_secs_f64() * 1000.0
+						core.actual_frame_time.as_secs_f64() * 1000.0
 					));
 					ui.label(format!(
 						"Frame time with sleep (core): {:.3}ms",
-						state.frame_time_with_sleep.as_secs_f64() * 1000.0
+						core.frame_time_with_sleep.as_secs_f64() * 1000.0
 					));
-					ui.label(format!("FPS (core): {:.3}", state.fps));
+					ui.label(format!("FPS (core): {:.3}", core.fps));
 
 					ui.separator();
 
@@ -379,9 +373,84 @@ impl Gui {
 			});
 	}
 
+	fn show_keymap_section(&mut self, ui: &mut egui::Ui) {
+		egui::CollapsingHeader::new("Keymap")
+			.default_open(true)
+			.show(ui, |ui| {
+				ui.add_enabled_ui(!self.error_occurred(), |ui| {
+					//CHIP-8 Keypad
+					//1 2 3 C
+					//4 5 6 D
+					//7 8 9 E
+					//A 0 B F
+
+					let mut keymap = self.core().keymap;
+					let mut changed = false;
+
+					ui.horizontal(|ui| {
+						ui.label(RichText::new("1 -").monospace());
+						changed |= Bind::new("btn_1", &mut keymap[0x1]).ui(ui).changed();
+
+						ui.label(RichText::new("2 -").monospace());
+						changed |= Bind::new("btn_2", &mut keymap[0x2]).ui(ui).changed();
+
+						ui.label(RichText::new("3 -").monospace());
+						changed |= Bind::new("btn_3", &mut keymap[0x3]).ui(ui).changed();
+
+						ui.label(RichText::new("C -").monospace());
+						changed |= Bind::new("btn_C", &mut keymap[0xC]).ui(ui).changed();
+					});
+					ui.horizontal(|ui| {
+						ui.label(RichText::new("4 -").monospace());
+						changed |= Bind::new("btn_4", &mut keymap[0x4]).ui(ui).changed();
+
+						ui.label(RichText::new("5 -").monospace());
+						changed |= Bind::new("btn_5", &mut keymap[0x5]).ui(ui).changed();
+
+						ui.label(RichText::new("6 -").monospace());
+						changed |= Bind::new("btn_6", &mut keymap[0x6]).ui(ui).changed();
+
+						ui.label(RichText::new("D -").monospace());
+						changed |= Bind::new("btn_D", &mut keymap[0xD]).ui(ui).changed();
+					});
+					ui.horizontal(|ui| {
+						ui.label(RichText::new("7 -").monospace());
+						changed |= Bind::new("btn_7", &mut keymap[0x7]).ui(ui).changed();
+
+						ui.label(RichText::new("8 -").monospace());
+						changed |= Bind::new("btn_8", &mut keymap[0x8]).ui(ui).changed();
+
+						ui.label(RichText::new("9 -").monospace());
+						changed |= Bind::new("btn_9", &mut keymap[0x9]).ui(ui).changed();
+
+						ui.label(RichText::new("E -").monospace());
+						changed |= Bind::new("btn_E", &mut keymap[0xE]).ui(ui).changed();
+					});
+					ui.horizontal(|ui| {
+						ui.label(RichText::new("A -").monospace());
+						changed |= Bind::new("btn_A", &mut keymap[0xA]).ui(ui).changed();
+
+						ui.label(RichText::new("0 -").monospace());
+						changed |= Bind::new("btn_0", &mut keymap[0x0]).ui(ui).changed();
+
+						ui.label(RichText::new("B -").monospace());
+						changed |= Bind::new("btn_B", &mut keymap[0xB]).ui(ui).changed();
+
+						ui.label(RichText::new("F -").monospace());
+						changed |= Bind::new("btn_F", &mut keymap[0xF]).ui(ui).changed();
+					});
+
+					if changed {
+						self.send_event(Event::ChangeKeymap(keymap))
+					}
+				});
+			});
+	}
+
 	fn reset_core(&mut self, ctx: &Context) {
-		//Keep opcodes per frame between resets
-		let opcodes_per_frame = self.state_receiver.latest().opcodes_per_frame;
+		//Keep these settings between resets
+		let opcodes_per_frame = self.core().opcodes_per_frame;
+		let keymap = self.core().keymap;
 
 		self.send_event(Event::Exit);
 
@@ -390,6 +459,7 @@ impl Gui {
 
 		self.create_new_core(ctx);
 		self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
+		self.send_event(Event::ChangeKeymap(keymap))
 	}
 
 	fn reset_core_keep_rom(&mut self, ctx: &Context) {
@@ -427,10 +497,10 @@ impl Gui {
 	}
 
 	fn show_running_and_step_frame(&mut self, ui: &mut egui::Ui) {
-		let state = self.state_receiver.latest();
-		let mut running = state.running;
+		let core = self.core();
+		let mut running = core.running;
 
-		ui.add_enabled_ui(state.rom_name.is_some(), |ui| {
+		ui.add_enabled_ui(core.rom_name.is_some(), |ui| {
 			if ui.checkbox(&mut running, "Running").clicked() {
 				self.send_event(Event::ChangeRunning(running));
 			};
@@ -446,9 +516,9 @@ impl Gui {
 	}
 
 	fn check_core_error(&mut self, ctx: &Context) {
-		let state = self.state_receiver.latest().clone();
+		let core = self.core().clone();
 
-		if let Some(error) = &state.error {
+		if let Some(error) = &core.error {
 			if self.show_error_window(ctx, &error.to_string()) {
 				self.create_new_core(ctx);
 			}
@@ -473,7 +543,7 @@ impl Gui {
 	}
 
 	fn error_occurred(&mut self) -> bool {
-		self.state_receiver.latest().error.is_some() || self.gui_error.is_some()
+		self.core().error.is_some() || self.gui_error.is_some()
 	}
 
 	fn show_error_window(&self, ctx: &Context, error: &str) -> bool {
@@ -495,7 +565,7 @@ impl Gui {
 			Err(e) => {
 				error!("Error sending event: {}", e);
 
-				if self.state_receiver.latest().error.is_some() {
+				if self.core().error.is_some() {
 					//If the core already reported an error, it will be caught sometime this frame and handled.
 					//That means this error can be ignored.
 					return;
@@ -504,6 +574,14 @@ impl Gui {
 				panic!("{}", e);
 			}
 		}
+	}
+
+	fn core(&mut self) -> &CoreState {
+		self.state_receiver.latest()
+	}
+
+	fn core_mut(&mut self) -> &mut CoreState {
+		self.state_receiver.latest_mut()
 	}
 }
 
