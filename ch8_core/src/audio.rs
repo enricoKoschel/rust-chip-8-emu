@@ -1,5 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use log::{trace, warn};
+use std::fmt;
+use std::fmt::Formatter;
 
 const SINE_FREQUENCY: f32 = 440.0;
 
@@ -7,9 +9,74 @@ const SINE_FREQUENCY: f32 = 440.0;
 #[allow(clippy::enum_variant_names)]
 pub enum Event {
 	ChangeEnabled(bool),
-	ChangeSoundTimer(u8),
-	ChangeFrequency(f32),
+	ChangeRunning(bool),
 	ChangeVolume(f32),
+}
+
+impl fmt::Display for Event {
+	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+		write!(f, "{:?}", self)
+	}
+}
+
+//TODO Reevaluate audio implementation
+
+struct Sound {
+	state: SoundState,
+	channels: usize,
+	sample_rate: f32,
+	sample_clock: f32,
+	running: bool,
+	enabled: bool,
+	state_updater: single_value_channel::Updater<SoundState>,
+	events: crossbeam_channel::Receiver<Event>,
+}
+
+impl Sound {
+	fn write_data<T: cpal::Sample>(&mut self, output: &mut [T]) {
+		self.handle_events();
+		if !self.running || !self.enabled {
+			for sample in output.iter_mut() {
+				*sample = cpal::Sample::from(&0.0);
+			}
+			return;
+		}
+
+		for frame in output.chunks_mut(self.channels) {
+			self.sample_clock = (self.sample_clock + 1.0) % self.sample_rate;
+			let sample_f32 = (self.sample_clock * SINE_FREQUENCY * 2.0 * std::f32::consts::PI
+				/ self.sample_rate)
+				.sin() * (self.state.volume / 10.0);
+
+			let sample_t = cpal::Sample::from(&sample_f32);
+			for sample in frame.iter_mut() {
+				*sample = sample_t;
+			}
+		}
+	}
+
+	fn handle_events(&mut self) {
+		while let Ok(event) = self.events.try_recv() {
+			trace!("Handling event: {:?}", event);
+
+			match event {
+				Event::ChangeEnabled(enabled) => {
+					self.enabled = enabled;
+				}
+				Event::ChangeRunning(running) => {
+					self.running = running;
+				}
+				Event::ChangeVolume(volume) => {
+					self.state.volume = volume;
+				}
+			}
+		}
+	}
+}
+
+#[derive(Clone)]
+pub struct SoundState {
+	pub volume: f32,
 }
 
 pub fn create_and_run() -> (
@@ -17,10 +84,7 @@ pub fn create_and_run() -> (
 	crossbeam_channel::Sender<Event>,
 	Option<cpal::Stream>,
 ) {
-	let state = SoundState {
-		frequency: SINE_FREQUENCY,
-		volume: 1.0,
-	};
+	let state = SoundState { volume: 1.0 };
 
 	let (state_receiver, state_updater) =
 		single_value_channel::channel_starting_with(state.clone());
@@ -98,76 +162,4 @@ fn run<T: cpal::Sample>(
 	}
 
 	Some(stream)
-}
-
-struct Sound {
-	state: SoundState,
-	channels: usize,
-	sample_rate: f32,
-	sample_clock: f32,
-	running: bool,
-	enabled: bool,
-	state_updater: single_value_channel::Updater<SoundState>,
-	events: crossbeam_channel::Receiver<Event>,
-}
-
-#[derive(Clone)]
-pub struct SoundState {
-	pub frequency: f32,
-	pub volume: f32,
-}
-
-impl Sound {
-	fn write_data<T: cpal::Sample>(&mut self, output: &mut [T]) {
-		self.handle_events();
-		if !self.running || !self.enabled {
-			for sample in output.iter_mut() {
-				*sample = cpal::Sample::from(&0.0);
-			}
-			return;
-		}
-
-		for frame in output.chunks_mut(self.channels) {
-			self.sample_clock = (self.sample_clock + 1.0) % self.sample_rate;
-			let sample_f32 =
-				(self.sample_clock * self.state.frequency * 2.0 * std::f32::consts::PI
-					/ self.sample_rate)
-					.sin() * (self.state.volume / 10.0);
-
-			let sample_t = cpal::Sample::from(&sample_f32);
-			for sample in frame.iter_mut() {
-				*sample = sample_t;
-			}
-		}
-	}
-
-	fn handle_events(&mut self) {
-		let mut event_handled = false;
-
-		while let Ok(event) = self.events.try_recv() {
-			trace!("Handling event: {:?}", event);
-
-			match event {
-				Event::ChangeEnabled(enabled) => {
-					self.enabled = enabled;
-				}
-				Event::ChangeSoundTimer(sound_timer) => {
-					self.running = sound_timer > 0;
-				}
-				Event::ChangeFrequency(frequency) => {
-					self.state.frequency = frequency;
-				}
-				Event::ChangeVolume(volume) => {
-					self.state.volume = volume;
-				}
-			}
-
-			event_handled = true;
-		}
-
-		//Only update GUI if an event was handled to lower CPU usage
-		if event_handled {
-			//self.update_gui();
-		}
-	}
 }

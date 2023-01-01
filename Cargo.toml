@@ -1,26 +1,3 @@
-[package]
-name = "chip-8-emu"
-version = "0.1.0"
-edition = "2021"
-authors = ["Enrico Koschel"]
-description = "Chip-8 emulator"
-license = "MIT"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-egui = "0.20.1"
-eframe = { version = "0.20.1", features = ["dark-light"] }
-egui_extras = "0.20.0"
-winit = "0.27.1"
-spin_sleep = "1.1.1"
-single_value_channel = "1.2.2"
-crossbeam-channel = "0.5.6"
-pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/", rev = "93a45981f449cea77de6e38d655facd334771bfc" }
-rand = "0.8.5"
-rfd = "0.10.0"
-log = "0.4.17"
-env_logger = "0.10.0"
-cpal = "0.14.0"
-egui_dnd = "0.1.0"
-egui-bind = "0.5.2"
+members = ["ch8_egui_frontend", "ch8_core"]

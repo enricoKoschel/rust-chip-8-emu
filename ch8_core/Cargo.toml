@@ -1,0 +1,18 @@
+[package]
+name = "ch8_core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Enrico Koschel"]
+description = "Chip-8 emulator core"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "0.4.17"
+pixel_buf = { git = "https://github.com/enricoKoschel/pixel_buf/", rev = "93a45981f449cea77de6e38d655facd334771bfc" }
+crossbeam-channel = "0.5.6"
+single_value_channel = "1.2.2"
+cpal = "0.14.0"
+spin_sleep = "1.1.1"
+rand = "0.8.5"

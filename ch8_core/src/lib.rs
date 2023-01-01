@@ -1,3 +1,8 @@
+mod audio;
+
+//TODO Maybe add wrapper type?
+pub use pixel_buf;
+
 use log::{error, trace, warn};
 use pixel_buf::{PixelBuf, Rgba};
 use std::fmt::{Debug, Formatter};
@@ -6,10 +11,8 @@ use std::time::Duration;
 use std::{fmt, fs, thread};
 
 const FPS: f64 = 60.0;
-pub const NAME: &str = "Chip-8 Emulator";
-pub const BASE_WIDTH: usize = 64;
-pub const BASE_HEIGHT: usize = 32;
-pub const DEFAULT_SCALE: f32 = 4.0;
+pub const WIDTH: usize = 64;
+pub const HEIGHT: usize = 32;
 
 #[derive(Debug)]
 pub enum Event {
@@ -18,7 +21,6 @@ pub enum Event {
 	LoadRom(PathBuf),
 	ChangeOpcodesPerFrame(u32),
 	Exit,
-	ChangeFrequency(f32),
 	ChangeVolume(f32),
 	KeysDown([bool; 16]),
 }
@@ -94,6 +96,26 @@ impl fmt::Display for ErrorKind {
 	}
 }
 
+pub struct StateReceiver(single_value_channel::Receiver<CoreState>);
+
+impl StateReceiver {
+	pub fn get(&mut self) -> &CoreState {
+		self.0.latest()
+	}
+
+	pub fn get_mut(&mut self) -> &mut CoreState {
+		self.0.latest_mut()
+	}
+}
+
+pub struct EventSender(crossbeam_channel::Sender<Event>);
+
+impl EventSender {
+	pub fn send(&self, event: Event) -> Result<(), Event> {
+		self.0.send(event).map_err(|e| e.0)
+	}
+}
+
 #[derive(Clone)]
 pub struct CoreState {
 	pub image: PixelBuf,
@@ -151,50 +173,18 @@ impl CoreState {
 	}
 }
 
-pub struct Core {
+struct Core {
 	state: CoreState,
 	sleep_error_millis: f64,
 	state_updater: single_value_channel::Updater<CoreState>,
-	frontend_event_receiver: crossbeam_channel::Receiver<Event>,
-	sound_event_sender: crossbeam_channel::Sender<crate::sound::Event>,
+	events: crossbeam_channel::Receiver<Event>,
+	sound_event_sender: crossbeam_channel::Sender<audio::Event>,
 	repaint_frontend_callback: Box<dyn Fn() + Send>,
+	//_audio_stream is only stored to allow the audio thread to stay alive
+	_audio_stream: Option<cpal::Stream>,
 }
 
 impl Core {
-	pub fn create_and_run(
-		repaint_frontend_callback: Box<dyn Fn() + Send>,
-	) -> (
-		single_value_channel::Receiver<CoreState>,
-		crossbeam_channel::Sender<Event>,
-		Option<cpal::Stream>,
-	) {
-		//TODO have better starting screen
-		let state = CoreState::new(PixelBuf::new([BASE_WIDTH, BASE_HEIGHT]));
-		let (core_state_receiver, core_state_updater) =
-			single_value_channel::channel_starting_with(state.clone());
-
-		let (frontend_event_sender, frontend_event_receiver) = crossbeam_channel::unbounded();
-
-		let (_, sound_event_sender, stream) = crate::sound::create_and_run();
-
-		let mut core = Self {
-			state,
-			sleep_error_millis: 0.0,
-			state_updater: core_state_updater,
-			frontend_event_receiver,
-			sound_event_sender,
-			repaint_frontend_callback,
-		};
-
-		core.initialise();
-
-		thread::spawn(move || {
-			core.run();
-		});
-
-		(core_state_receiver, frontend_event_sender, stream)
-	}
-
 	fn initialise(&mut self) {
 		self.load_font();
 	}
@@ -226,7 +216,7 @@ impl Core {
 		let rom = match fs::read(&path) {
 			Ok(rom) => rom,
 			Err(e) => {
-				self.core_error(ErrorKind::InvalidRom {
+				self.error(ErrorKind::InvalidRom {
 					path,
 					specific_error: e.to_string(),
 				});
@@ -248,7 +238,7 @@ impl Core {
 
 		//The lower 512 bytes were reserved for the interpreter on original hardware
 		if rom.len() > 4096 - 512 {
-			self.core_error(ErrorKind::RomTooLarge {
+			self.error(ErrorKind::RomTooLarge {
 				path,
 				size: rom.len(),
 				allowed: 4096 - 512,
@@ -326,13 +316,13 @@ impl Core {
 	fn handle_events(&mut self) {
 		let mut event_handled = false;
 
-		while let Ok(event) = self.frontend_event_receiver.try_recv() {
+		while let Ok(event) = self.events.try_recv() {
 			trace!("Handling event: {}", event);
 
 			match event {
 				Event::ChangeRunning(running) => {
 					self.state.running = running;
-					self.send_sound_event(crate::sound::Event::ChangeEnabled(running));
+					self.send_sound_event(audio::Event::ChangeEnabled(running));
 				}
 				Event::StepFrame => {
 					self.state.step_frame = true;
@@ -347,11 +337,8 @@ impl Core {
 					self.state.running = false;
 					self.state.exit_requested = true;
 				}
-				Event::ChangeFrequency(frequency) => {
-					self.send_sound_event(crate::sound::Event::ChangeFrequency(frequency));
-				}
 				Event::ChangeVolume(volume) => {
-					self.send_sound_event(crate::sound::Event::ChangeVolume(volume));
+					self.send_sound_event(audio::Event::ChangeVolume(volume));
 				}
 				Event::KeysDown(keys) => {
 					self.state.previous_keys_down = self.state.keys_down;
@@ -368,11 +355,11 @@ impl Core {
 		}
 	}
 
-	fn send_sound_event(&mut self, event: crate::sound::Event) {
+	fn send_sound_event(&mut self, event: audio::Event) {
 		match self.sound_event_sender.send(event) {
 			Ok(_) => {}
 			Err(e) => {
-				error!("Error sending event: {}", e);
+				error!("Error sending event ({})", e.0);
 				panic!("{}", e);
 			}
 		}
@@ -425,9 +412,7 @@ impl Core {
 
 		if self.state.sound_timer > 0 {
 			self.state.sound_timer -= 1;
-			self.send_sound_event(crate::sound::Event::ChangeSoundTimer(
-				self.state.sound_timer,
-			));
+			self.send_sound_event(audio::Event::ChangeRunning(self.state.sound_timer > 0));
 		}
 	}
 
@@ -472,7 +457,7 @@ impl Core {
 				//0x00EE: Return from a subroutine
 				match self.state.call_stack.pop() {
 					Some(pc) => self.state.program_counter = pc,
-					None => self.core_error(ErrorKind::InvalidReturn {
+					None => self.error(ErrorKind::InvalidReturn {
 						address: self.state.program_counter - 2,
 					}),
 				};
@@ -522,7 +507,7 @@ impl Core {
 		//0x5XY0: Skip next instruction if VX equals VY
 		let last_nibble = opcode & 0x000F;
 		if last_nibble != 0x0 {
-			self.core_error(ErrorKind::InvalidOpcode {
+			self.error(ErrorKind::InvalidOpcode {
 				opcode,
 				address: self.state.program_counter - 2,
 			});
@@ -640,7 +625,7 @@ impl Core {
 				self.state.v_registers[x as usize] = self.state.v_registers[y as usize] << 1;
 				self.state.v_registers[0xF] = msb;
 			}
-			_ => self.core_error(ErrorKind::InvalidOpcode {
+			_ => self.error(ErrorKind::InvalidOpcode {
 				opcode,
 				address: self.state.program_counter - 2,
 			}),
@@ -651,7 +636,7 @@ impl Core {
 		//0x9XY0: Skip next instruction if VX doesn't equal VY
 		let last_nibble = opcode & 0x000F;
 		if last_nibble != 0x0 {
-			self.core_error(ErrorKind::InvalidOpcode {
+			self.error(ErrorKind::InvalidOpcode {
 				opcode,
 				address: self.state.program_counter - 2,
 			});
@@ -714,10 +699,10 @@ impl Core {
 			let raw_byte = self.state.memory[self.state.i_register as usize + row];
 
 			for col in 0..=7 {
-				let x = (x % BASE_WIDTH) + col;
-				let y = (y % BASE_HEIGHT) + row;
+				let x = (x % WIDTH) + col;
+				let y = (y % HEIGHT) + row;
 
-				if x > BASE_WIDTH - 1 || y > BASE_HEIGHT - 1 {
+				if x > WIDTH - 1 || y > HEIGHT - 1 {
 					continue;
 				}
 
@@ -756,7 +741,7 @@ impl Core {
 					self.skip_opcode();
 				}
 			}
-			_ => self.core_error(ErrorKind::InvalidOpcode {
+			_ => self.error(ErrorKind::InvalidOpcode {
 				opcode,
 				address: self.state.program_counter - 2,
 			}),
@@ -818,7 +803,7 @@ impl Core {
 					self.state.i_register += 1;
 				}
 			}
-			_ => self.core_error(ErrorKind::InvalidOpcode {
+			_ => self.error(ErrorKind::InvalidOpcode {
 				opcode,
 				address: self.state.program_counter - 2,
 			}),
@@ -868,7 +853,7 @@ impl Core {
 	}
 
 	#[inline]
-	fn core_error(&mut self, error: ErrorKind) {
+	fn error(&mut self, error: ErrorKind) {
 		error!("Core error: {}", error);
 
 		self.state.error = Some(error);
@@ -897,4 +882,38 @@ impl Core {
 		let lo = self.read_8bit_immediate();
 		(hi as u16) << 8 | lo as u16
 	}
+}
+
+pub fn create_and_run(
+	repaint_frontend_callback: Box<dyn Fn() + Send>,
+) -> (StateReceiver, EventSender) {
+	//TODO Better starting screen (ROM loading instructions)
+	let state = CoreState::new(PixelBuf::new([WIDTH, HEIGHT]));
+	let (core_state_receiver, core_state_updater) =
+		single_value_channel::channel_starting_with(state.clone());
+
+	let (frontend_event_sender, frontend_event_receiver) = crossbeam_channel::unbounded();
+
+	thread::spawn(move || {
+		let (state_receiver, sound_event_sender, audio_stream) = audio::create_and_run();
+
+		let mut core = Core {
+			state,
+			sleep_error_millis: 0.0,
+			state_updater: core_state_updater,
+			events: frontend_event_receiver,
+			sound_event_sender,
+			repaint_frontend_callback,
+			_audio_stream: audio_stream,
+		};
+
+		core.initialise();
+
+		core.run();
+	});
+
+	(
+		StateReceiver(core_state_receiver),
+		EventSender(frontend_event_sender),
+	)
 }

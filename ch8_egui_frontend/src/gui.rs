@@ -1,15 +1,14 @@
-use crate::core;
-use crate::core::{CoreState, Event};
+use ch8_core::{pixel_buf::PixelBuf, CoreState, EventSender, StateReceiver};
 use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
 use egui::{RichText, Widget};
 use egui_bind::{Bind, BindTarget};
 use egui_dnd::DragDropUi;
 use log::{error, trace, warn};
-use pixel_buf::PixelBuf;
 use std::thread;
 
 const FONT_SIZE: f32 = 1.3;
+const DEFAULT_SCALE: f32 = 4.0;
 
 const DEFAULT_KEYMAP: [Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16] = {
 	use egui::Key::*;
@@ -54,11 +53,10 @@ pub struct Gui {
 	max_scale: f32,
 	transparent_frame: egui::containers::Frame,
 	frame_no_margin: egui::containers::Frame,
-	state_receiver: single_value_channel::Receiver<CoreState>,
-	events: crossbeam_channel::Sender<Event>,
+	core_state: StateReceiver,
+	event_sender: EventSender,
 	gui_error: Option<String>,
 	last_rom_path: Option<std::path::PathBuf>,
-	stream: Option<cpal::Stream>,
 	side_menu_width: f32,
 	side_menu_sections: Vec<SideMenuDragDropItem>,
 	side_menu_drag_state: DragDropUi,
@@ -69,7 +67,7 @@ pub struct Gui {
 impl Gui {
 	pub fn new(cc: &CreationContext) -> Self {
 		let egui_ctx = cc.egui_ctx.clone();
-		let (state_receiver, events, stream) = core::Core::create_and_run(Box::new(move || {
+		let (state_receiver, event_sender) = ch8_core::create_and_run(Box::new(move || {
 			egui_ctx.request_repaint();
 		}));
 
@@ -87,11 +85,10 @@ impl Gui {
 			max_scale: 0.0,
 			transparent_frame: egui::containers::Frame::default(),
 			frame_no_margin: egui::containers::Frame::default(),
-			state_receiver,
-			events,
+			core_state: state_receiver,
+			event_sender,
 			gui_error: None,
 			last_rom_path: None,
-			stream,
 			side_menu_width: 0.0,
 			side_menu_sections: vec![
 				SideMenuDragDropItem(Rom),
@@ -145,8 +142,8 @@ impl Gui {
 				warn!("No or zero sized monitor found, using default size");
 
 				(
-					core::BASE_WIDTH as f32 * core::DEFAULT_SCALE,
-					core::BASE_HEIGHT as f32 * core::DEFAULT_SCALE,
+					ch8_core::WIDTH as f32 * DEFAULT_SCALE,
+					ch8_core::HEIGHT as f32 * DEFAULT_SCALE,
 				)
 			}
 		}
@@ -157,7 +154,7 @@ impl Gui {
 		trace!("Screen size: {}x{}", screen_width, screen_height);
 
 		//Add 30% so max scale cannot be reached by resizing the window
-		self.max_scale = (screen_width / core::BASE_WIDTH as f32).round() * 1.3;
+		self.max_scale = (screen_width / ch8_core::WIDTH as f32).round() * 1.3;
 		self.scale = (self.max_scale / 1.8).round();
 		trace!("Max scale: {}, scale: {}", self.max_scale, self.scale);
 
@@ -220,8 +217,8 @@ impl Gui {
 		let mut screen_size = ctx.input().screen_rect.size();
 		screen_size.x -= self.side_menu_width;
 
-		let scale_x = screen_size.x / core::BASE_WIDTH as f32;
-		let scale_y = screen_size.y / core::BASE_HEIGHT as f32;
+		let scale_x = screen_size.x / ch8_core::WIDTH as f32;
+		let scale_y = screen_size.y / ch8_core::HEIGHT as f32;
 
 		let new_scale = self.max_scale.min(scale_x.min(scale_y));
 
@@ -326,8 +323,8 @@ impl Gui {
 							}
 
 							self.last_rom_path = Some(path.clone());
-							self.send_event(Event::LoadRom(path));
-							self.send_event(Event::ChangeRunning(true));
+							self.send_event(ch8_core::Event::LoadRom(path));
+							self.send_event(ch8_core::Event::ChangeRunning(true));
 						} else {
 							error!("Error while picking rom file");
 
@@ -353,10 +350,10 @@ impl Gui {
 					);
 
 					if slider.changed() {
-						self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
+						self.send_event(ch8_core::Event::ChangeOpcodesPerFrame(opcodes_per_frame));
 					}
 					if slider.double_clicked() {
-						self.send_event(Event::ChangeOpcodesPerFrame(20));
+						self.send_event(ch8_core::Event::ChangeOpcodesPerFrame(20));
 					}
 
 					self.show_running_and_step_frame(ui);
@@ -470,28 +467,6 @@ impl Gui {
 			});
 	}
 
-	fn reset_core(&mut self, ctx: &Context) {
-		//Keep these settings between resets
-		let opcodes_per_frame = self.core().opcodes_per_frame;
-
-		self.send_event(Event::Exit);
-
-		//Sleep so the other thread has enough time to terminate
-		thread::sleep(std::time::Duration::from_millis(100));
-
-		self.create_new_core(ctx);
-		self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
-	}
-
-	fn reset_core_keep_rom(&mut self, ctx: &Context) {
-		self.reset_core(ctx);
-
-		if let Some(path) = self.last_rom_path.clone() {
-			self.send_event(Event::LoadRom(path));
-			self.send_event(Event::ChangeRunning(true));
-		}
-	}
-
 	fn add_game_screen(&mut self, ctx: &Context) {
 		let image = {
 			let size = self.latest_frame().get_size();
@@ -523,12 +498,12 @@ impl Gui {
 
 		ui.add_enabled_ui(core.rom_name.is_some(), |ui| {
 			if ui.checkbox(&mut running, "Running").clicked() {
-				self.send_event(Event::ChangeRunning(running));
+				self.send_event(ch8_core::Event::ChangeRunning(running));
 			};
 
 			ui.add_enabled_ui(!running, |ui| {
 				if ui.button("Step frame").clicked() {
-					self.send_event(Event::StepFrame);
+					self.send_event(ch8_core::Event::StepFrame);
 				}
 			});
 		});
@@ -541,21 +516,39 @@ impl Gui {
 
 		if let Some(error) = &core.error {
 			if self.show_error_window(ctx, &error.to_string()) {
-				self.create_new_core(ctx);
+				self.reset_core(ctx);
 			}
 		}
 	}
 
-	fn create_new_core(&mut self, ctx: &Context) {
-		trace!("Creating new core");
+	fn reset_core(&mut self, ctx: &Context) {
+		trace!("Resetting core");
+
+		//Keep these settings between resets
+		let opcodes_per_frame = self.core().opcodes_per_frame;
+
+		self.send_event(ch8_core::Event::Exit);
+
+		//Sleep so the core thread has enough time to terminate
+		thread::sleep(std::time::Duration::from_millis(100));
 
 		let egui_ctx = ctx.clone();
-		let (state_receiver, events, stream) = core::Core::create_and_run(Box::new(move || {
+		let (state_receiver, events) = ch8_core::create_and_run(Box::new(move || {
 			egui_ctx.request_repaint();
 		}));
-		self.state_receiver = state_receiver;
-		self.events = events;
-		self.stream = stream;
+		self.core_state = state_receiver;
+		self.event_sender = events;
+
+		self.send_event(ch8_core::Event::ChangeOpcodesPerFrame(opcodes_per_frame));
+	}
+
+	fn reset_core_keep_rom(&mut self, ctx: &Context) {
+		self.reset_core(ctx);
+
+		if let Some(path) = self.last_rom_path.clone() {
+			self.send_event(ch8_core::Event::LoadRom(path));
+			self.send_event(ch8_core::Event::ChangeRunning(true));
+		}
 	}
 
 	fn check_gui_error(&mut self, ctx: &Context) {
@@ -583,11 +576,11 @@ impl Gui {
 		clicked
 	}
 
-	fn send_event(&mut self, event: Event) {
-		match self.events.send(event) {
+	fn send_event(&mut self, event: ch8_core::Event) {
+		match self.event_sender.send(event) {
 			Ok(_) => {}
 			Err(e) => {
-				error!("Error sending event: {}", e);
+				error!("Error sending event ({})", e);
 
 				if self.core().error.is_some() {
 					//If the core already reported an error, it will be caught sometime this frame and handled.
@@ -601,11 +594,7 @@ impl Gui {
 	}
 
 	fn core(&mut self) -> &CoreState {
-		self.state_receiver.latest()
-	}
-
-	fn core_mut(&mut self) -> &mut CoreState {
-		self.state_receiver.latest_mut()
+		self.core_state.get()
 	}
 
 	fn send_keys_to_core(&mut self, ctx: &Context) {
@@ -615,7 +604,8 @@ impl Gui {
 			.try_into()
 			.expect("Shouldn't fail because the mapped range contains 16 elements");
 
-		self.send_event(Event::KeysDown(keys));
+		//TODO Don't send event if keys down haven't changed
+		self.send_event(ch8_core::Event::KeysDown(keys));
 	}
 }
 
