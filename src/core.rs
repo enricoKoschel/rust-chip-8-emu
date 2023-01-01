@@ -1,5 +1,3 @@
-use eframe::egui;
-use egui_bind::BindTarget;
 use log::{error, trace, warn};
 use pixel_buf::{PixelBuf, Rgba};
 use std::fmt::{Debug, Formatter};
@@ -13,31 +11,6 @@ pub const BASE_WIDTH: usize = 64;
 pub const BASE_HEIGHT: usize = 32;
 pub const DEFAULT_SCALE: f32 = 4.0;
 
-const DEFAULT_KEYMAP: [Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16] = {
-	use egui::Key::*;
-	use egui::Modifiers;
-	use egui_bind::KeyOrPointer;
-
-	[
-		Some((KeyOrPointer::Key(X), Modifiers::NONE)),    //0
-		Some((KeyOrPointer::Key(Num1), Modifiers::NONE)), //1
-		Some((KeyOrPointer::Key(Num2), Modifiers::NONE)), //2
-		Some((KeyOrPointer::Key(Num3), Modifiers::NONE)), //3
-		Some((KeyOrPointer::Key(Q), Modifiers::NONE)),    //4
-		Some((KeyOrPointer::Key(W), Modifiers::NONE)),    //5
-		Some((KeyOrPointer::Key(E), Modifiers::NONE)),    //6
-		Some((KeyOrPointer::Key(A), Modifiers::NONE)),    //7
-		Some((KeyOrPointer::Key(S), Modifiers::NONE)),    //8
-		Some((KeyOrPointer::Key(D), Modifiers::NONE)),    //9
-		Some((KeyOrPointer::Key(Y), Modifiers::NONE)),    //A
-		Some((KeyOrPointer::Key(C), Modifiers::NONE)),    //B
-		Some((KeyOrPointer::Key(Num4), Modifiers::NONE)), //C
-		Some((KeyOrPointer::Key(R), Modifiers::NONE)),    //D
-		Some((KeyOrPointer::Key(F), Modifiers::NONE)),    //E
-		Some((KeyOrPointer::Key(V), Modifiers::NONE)),    //F
-	]
-};
-
 #[derive(Debug)]
 pub enum Event {
 	ChangeRunning(bool),
@@ -47,7 +20,7 @@ pub enum Event {
 	Exit,
 	ChangeFrequency(f32),
 	ChangeVolume(f32),
-	ChangeKeymap([Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16]),
+	KeysDown([bool; 16]),
 }
 
 impl fmt::Display for Event {
@@ -140,7 +113,6 @@ pub struct CoreState {
 	pub call_stack: Vec<u16>,
 	pub delay_timer: u8,
 	pub sound_timer: u8,
-	pub keymap: [Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16],
 	pub rom_name: Option<String>,
 	pub rom_size: Option<usize>,
 	pub opcodes_per_frame: u32,
@@ -169,7 +141,6 @@ impl CoreState {
 			call_stack: vec![],
 			delay_timer: 0,
 			sound_timer: 0,
-			keymap: DEFAULT_KEYMAP,
 			rom_name: None,
 			rom_size: None,
 			opcodes_per_frame: 20,
@@ -181,17 +152,17 @@ impl CoreState {
 }
 
 pub struct Core {
-	ctx: egui::Context,
 	state: CoreState,
 	sleep_error_millis: f64,
 	state_updater: single_value_channel::Updater<CoreState>,
-	gui_event_receiver: crossbeam_channel::Receiver<Event>,
+	frontend_event_receiver: crossbeam_channel::Receiver<Event>,
 	sound_event_sender: crossbeam_channel::Sender<crate::sound::Event>,
+	repaint_frontend_callback: Box<dyn Fn() + Send>,
 }
 
 impl Core {
 	pub fn create_and_run(
-		ctx: egui::Context,
+		repaint_frontend_callback: Box<dyn Fn() + Send>,
 	) -> (
 		single_value_channel::Receiver<CoreState>,
 		crossbeam_channel::Sender<Event>,
@@ -202,17 +173,17 @@ impl Core {
 		let (core_state_receiver, core_state_updater) =
 			single_value_channel::channel_starting_with(state.clone());
 
-		let (gui_event_sender, gui_event_receiver) = crossbeam_channel::unbounded();
+		let (frontend_event_sender, frontend_event_receiver) = crossbeam_channel::unbounded();
 
 		let (_, sound_event_sender, stream) = crate::sound::create_and_run();
 
 		let mut core = Self {
-			ctx,
 			state,
 			sleep_error_millis: 0.0,
 			state_updater: core_state_updater,
-			gui_event_receiver,
+			frontend_event_receiver,
 			sound_event_sender,
+			repaint_frontend_callback,
 		};
 
 		core.initialise();
@@ -221,7 +192,7 @@ impl Core {
 			core.run();
 		});
 
-		(core_state_receiver, gui_event_sender, stream)
+		(core_state_receiver, frontend_event_sender, stream)
 	}
 
 	fn initialise(&mut self) {
@@ -310,7 +281,7 @@ impl Core {
 					return;
 				}
 
-				self.update_gui();
+				self.update_frontend();
 
 				self.state.current_frame += 1;
 			}
@@ -355,7 +326,7 @@ impl Core {
 	fn handle_events(&mut self) {
 		let mut event_handled = false;
 
-		while let Ok(event) = self.gui_event_receiver.try_recv() {
+		while let Ok(event) = self.frontend_event_receiver.try_recv() {
 			trace!("Handling event: {}", event);
 
 			match event {
@@ -382,17 +353,18 @@ impl Core {
 				Event::ChangeVolume(volume) => {
 					self.send_sound_event(crate::sound::Event::ChangeVolume(volume));
 				}
-				Event::ChangeKeymap(keymap) => {
-					self.state.keymap = keymap;
+				Event::KeysDown(keys) => {
+					self.state.previous_keys_down = self.state.keys_down;
+					self.state.keys_down = keys;
 				}
 			}
 
 			event_handled = true;
 		}
 
-		//Only update GUI if an event was handled to lower CPU usage
+		//Only update the frontend if an event was handled to lower CPU usage
 		if event_handled {
-			self.update_gui();
+			self.update_frontend();
 		}
 	}
 
@@ -446,14 +418,6 @@ impl Core {
 		self.update_timers();
 	}
 
-	fn update_keys(&mut self) {
-		self.state.previous_keys_down = self.state.keys_down;
-
-		for key in 0..16 {
-			self.state.keys_down[key] = self.state.keymap[key].down(self.ctx.input());
-		}
-	}
-
 	fn update_timers(&mut self) {
 		if self.state.delay_timer > 0 {
 			self.state.delay_timer -= 1;
@@ -468,8 +432,6 @@ impl Core {
 	}
 
 	fn execute_opcode(&mut self, first_in_frame: bool) {
-		self.update_keys();
-
 		let opcode = self.read_16bit_immediate();
 		trace!(
 			"Opcode: {:#06X} at {:#06X}",
@@ -894,10 +856,10 @@ impl Core {
 	}
 
 	#[inline]
-	fn update_gui(&self) {
+	fn update_frontend(&self) {
 		//FIXME Panics sometimes even though receiver wasn't dropped?
 		self.state_updater.update(self.state.clone()).unwrap();
-		self.ctx.request_repaint();
+		(self.repaint_frontend_callback)();
 	}
 
 	#[inline]
@@ -910,7 +872,7 @@ impl Core {
 		error!("Core error: {}", error);
 
 		self.state.error = Some(error);
-		self.update_gui();
+		self.update_frontend();
 	}
 
 	#[inline]

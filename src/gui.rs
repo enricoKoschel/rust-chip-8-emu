@@ -3,13 +3,38 @@ use crate::core::{CoreState, Event};
 use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
 use egui::{RichText, Widget};
-use egui_bind::Bind;
+use egui_bind::{Bind, BindTarget};
 use egui_dnd::DragDropUi;
 use log::{error, trace, warn};
 use pixel_buf::PixelBuf;
 use std::thread;
 
 const FONT_SIZE: f32 = 1.3;
+
+const DEFAULT_KEYMAP: [Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16] = {
+	use egui::Key::*;
+	use egui::Modifiers;
+	use egui_bind::KeyOrPointer;
+
+	[
+		Some((KeyOrPointer::Key(X), Modifiers::NONE)),    //0
+		Some((KeyOrPointer::Key(Num1), Modifiers::NONE)), //1
+		Some((KeyOrPointer::Key(Num2), Modifiers::NONE)), //2
+		Some((KeyOrPointer::Key(Num3), Modifiers::NONE)), //3
+		Some((KeyOrPointer::Key(Q), Modifiers::NONE)),    //4
+		Some((KeyOrPointer::Key(W), Modifiers::NONE)),    //5
+		Some((KeyOrPointer::Key(E), Modifiers::NONE)),    //6
+		Some((KeyOrPointer::Key(A), Modifiers::NONE)),    //7
+		Some((KeyOrPointer::Key(S), Modifiers::NONE)),    //8
+		Some((KeyOrPointer::Key(D), Modifiers::NONE)),    //9
+		Some((KeyOrPointer::Key(Y), Modifiers::NONE)),    //A
+		Some((KeyOrPointer::Key(C), Modifiers::NONE)),    //B
+		Some((KeyOrPointer::Key(Num4), Modifiers::NONE)), //C
+		Some((KeyOrPointer::Key(R), Modifiers::NONE)),    //D
+		Some((KeyOrPointer::Key(F), Modifiers::NONE)),    //E
+		Some((KeyOrPointer::Key(V), Modifiers::NONE)),    //F
+	]
+};
 
 #[derive(Hash, Clone)]
 enum SideMenuSection {
@@ -38,11 +63,15 @@ pub struct Gui {
 	side_menu_sections: Vec<SideMenuDragDropItem>,
 	side_menu_drag_state: DragDropUi,
 	scale_locked: bool,
+	keymap: [Option<(egui_bind::KeyOrPointer, egui::Modifiers)>; 16],
 }
 
 impl Gui {
 	pub fn new(cc: &CreationContext) -> Self {
-		let (state_receiver, events, stream) = core::Core::create_and_run(cc.egui_ctx.clone());
+		let egui_ctx = cc.egui_ctx.clone();
+		let (state_receiver, events, stream) = core::Core::create_and_run(Box::new(move || {
+			egui_ctx.request_repaint();
+		}));
 
 		let theme = cc
 			.integration_info
@@ -72,6 +101,7 @@ impl Gui {
 			],
 			side_menu_drag_state: DragDropUi::default(),
 			scale_locked: false,
+			keymap: DEFAULT_KEYMAP,
 		}
 	}
 
@@ -384,65 +414,58 @@ impl Gui {
 					//7 8 9 E
 					//A 0 B F
 
-					let mut keymap = self.core().keymap;
-					let mut changed = false;
-
 					ui.horizontal(|ui| {
 						ui.label(RichText::new("1 -").monospace());
-						changed |= Bind::new("btn_1", &mut keymap[0x1]).ui(ui).changed();
+						Bind::new("btn_1", &mut self.keymap[0x1]).ui(ui).changed();
 
 						ui.label(RichText::new("2 -").monospace());
-						changed |= Bind::new("btn_2", &mut keymap[0x2]).ui(ui).changed();
+						Bind::new("btn_2", &mut self.keymap[0x2]).ui(ui).changed();
 
 						ui.label(RichText::new("3 -").monospace());
-						changed |= Bind::new("btn_3", &mut keymap[0x3]).ui(ui).changed();
+						Bind::new("btn_3", &mut self.keymap[0x3]).ui(ui).changed();
 
 						ui.label(RichText::new("C -").monospace());
-						changed |= Bind::new("btn_C", &mut keymap[0xC]).ui(ui).changed();
+						Bind::new("btn_C", &mut self.keymap[0xC]).ui(ui).changed();
 					});
 					ui.horizontal(|ui| {
 						ui.label(RichText::new("4 -").monospace());
-						changed |= Bind::new("btn_4", &mut keymap[0x4]).ui(ui).changed();
+						Bind::new("btn_4", &mut self.keymap[0x4]).ui(ui).changed();
 
 						ui.label(RichText::new("5 -").monospace());
-						changed |= Bind::new("btn_5", &mut keymap[0x5]).ui(ui).changed();
+						Bind::new("btn_5", &mut self.keymap[0x5]).ui(ui).changed();
 
 						ui.label(RichText::new("6 -").monospace());
-						changed |= Bind::new("btn_6", &mut keymap[0x6]).ui(ui).changed();
+						Bind::new("btn_6", &mut self.keymap[0x6]).ui(ui).changed();
 
 						ui.label(RichText::new("D -").monospace());
-						changed |= Bind::new("btn_D", &mut keymap[0xD]).ui(ui).changed();
+						Bind::new("btn_D", &mut self.keymap[0xD]).ui(ui).changed();
 					});
 					ui.horizontal(|ui| {
 						ui.label(RichText::new("7 -").monospace());
-						changed |= Bind::new("btn_7", &mut keymap[0x7]).ui(ui).changed();
+						Bind::new("btn_7", &mut self.keymap[0x7]).ui(ui).changed();
 
 						ui.label(RichText::new("8 -").monospace());
-						changed |= Bind::new("btn_8", &mut keymap[0x8]).ui(ui).changed();
+						Bind::new("btn_8", &mut self.keymap[0x8]).ui(ui).changed();
 
 						ui.label(RichText::new("9 -").monospace());
-						changed |= Bind::new("btn_9", &mut keymap[0x9]).ui(ui).changed();
+						Bind::new("btn_9", &mut self.keymap[0x9]).ui(ui).changed();
 
 						ui.label(RichText::new("E -").monospace());
-						changed |= Bind::new("btn_E", &mut keymap[0xE]).ui(ui).changed();
+						Bind::new("btn_E", &mut self.keymap[0xE]).ui(ui).changed();
 					});
 					ui.horizontal(|ui| {
 						ui.label(RichText::new("A -").monospace());
-						changed |= Bind::new("btn_A", &mut keymap[0xA]).ui(ui).changed();
+						Bind::new("btn_A", &mut self.keymap[0xA]).ui(ui).changed();
 
 						ui.label(RichText::new("0 -").monospace());
-						changed |= Bind::new("btn_0", &mut keymap[0x0]).ui(ui).changed();
+						Bind::new("btn_0", &mut self.keymap[0x0]).ui(ui).changed();
 
 						ui.label(RichText::new("B -").monospace());
-						changed |= Bind::new("btn_B", &mut keymap[0xB]).ui(ui).changed();
+						Bind::new("btn_B", &mut self.keymap[0xB]).ui(ui).changed();
 
 						ui.label(RichText::new("F -").monospace());
-						changed |= Bind::new("btn_F", &mut keymap[0xF]).ui(ui).changed();
+						Bind::new("btn_F", &mut self.keymap[0xF]).ui(ui).changed();
 					});
-
-					if changed {
-						self.send_event(Event::ChangeKeymap(keymap))
-					}
 				});
 			});
 	}
@@ -450,7 +473,6 @@ impl Gui {
 	fn reset_core(&mut self, ctx: &Context) {
 		//Keep these settings between resets
 		let opcodes_per_frame = self.core().opcodes_per_frame;
-		let keymap = self.core().keymap;
 
 		self.send_event(Event::Exit);
 
@@ -459,7 +481,6 @@ impl Gui {
 
 		self.create_new_core(ctx);
 		self.send_event(Event::ChangeOpcodesPerFrame(opcodes_per_frame));
-		self.send_event(Event::ChangeKeymap(keymap))
 	}
 
 	fn reset_core_keep_rom(&mut self, ctx: &Context) {
@@ -528,7 +549,10 @@ impl Gui {
 	fn create_new_core(&mut self, ctx: &Context) {
 		trace!("Creating new core");
 
-		let (state_receiver, events, stream) = core::Core::create_and_run(ctx.clone());
+		let egui_ctx = ctx.clone();
+		let (state_receiver, events, stream) = core::Core::create_and_run(Box::new(move || {
+			egui_ctx.request_repaint();
+		}));
 		self.state_receiver = state_receiver;
 		self.events = events;
 		self.stream = stream;
@@ -583,6 +607,16 @@ impl Gui {
 	fn core_mut(&mut self) -> &mut CoreState {
 		self.state_receiver.latest_mut()
 	}
+
+	fn send_keys_to_core(&mut self, ctx: &Context) {
+		let keys: [bool; 16] = (0..16)
+			.map(|i| self.keymap[i].down(ctx.input()))
+			.collect::<Vec<bool>>()
+			.try_into()
+			.expect("Shouldn't fail because the mapped range contains 16 elements");
+
+		self.send_event(Event::KeysDown(keys));
+	}
 }
 
 impl eframe::App for Gui {
@@ -598,6 +632,8 @@ impl eframe::App for Gui {
 		}
 
 		self.add_game_screen(ctx);
+
+		self.send_keys_to_core(ctx);
 
 		self.check_core_error(ctx);
 		self.check_gui_error(ctx);
