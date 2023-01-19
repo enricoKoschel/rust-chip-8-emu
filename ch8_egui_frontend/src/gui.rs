@@ -230,7 +230,7 @@ impl Gui {
 
 	fn add_side_menu(&mut self, ctx: &Context, frame: &mut Frame) {
 		let side_menu = egui::SidePanel::right("side_menu")
-			.min_width(400.0)
+			.exact_width(400.0)
 			.frame(self.frame_no_margin)
 			.show(ctx, |ui| {
 				self.show_side_menu_sections(ctx, frame, ui);
@@ -274,8 +274,6 @@ impl Gui {
 				ui.separator();
 			},
 		);
-		//Allow resizing the side menu arbitrarily large and stop it from shrinking when the content is small
-		ui.allocate_space(ui.available_size());
 
 		self.scale_locked = drag_response.current_drag.is_some();
 
