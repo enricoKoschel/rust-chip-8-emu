@@ -10,7 +10,6 @@ license = "MIT"
 
 [dependencies]
 ch8_core = { path = "../ch8_core" }
-egui = "0.20.1"
 eframe = { version = "0.20.1", features = ["dark-light"] }
 egui_extras = "0.20.0"
 rfd = "0.10.0"

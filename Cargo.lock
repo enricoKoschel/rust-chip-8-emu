@@ -488,7 +488,6 @@ version = "0.1.0"
 dependencies = [
  "ch8_core",
  "eframe",
- "egui",
  "egui-bind",
  "egui_dnd",
  "egui_extras",
