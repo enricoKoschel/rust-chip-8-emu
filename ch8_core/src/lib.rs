@@ -96,23 +96,22 @@ impl fmt::Display for ErrorKind {
 	}
 }
 
-pub struct StateReceiver(single_value_channel::Receiver<CoreState>);
-
-impl StateReceiver {
-	pub fn get(&mut self) -> &CoreState {
-		self.0.latest()
-	}
-
-	pub fn get_mut(&mut self) -> &mut CoreState {
-		self.0.latest_mut()
-	}
+pub struct Chip8Core {
+	state: single_value_channel::Receiver<CoreState>,
+	event_sender: crossbeam_channel::Sender<Event>,
 }
 
-pub struct EventSender(crossbeam_channel::Sender<Event>);
+impl Chip8Core {
+	pub fn get_state(&mut self) -> &CoreState {
+		self.state.latest()
+	}
 
-impl EventSender {
-	pub fn send(&self, event: Event) -> Result<(), Event> {
-		self.0.send(event).map_err(|e| e.0)
+	pub fn get_state_mut(&mut self) -> &mut CoreState {
+		self.state.latest_mut()
+	}
+
+	pub fn send_event(&self, event: Event) -> Result<(), Event> {
+		self.event_sender.send(event).map_err(|e| e.0)
 	}
 }
 
@@ -884,9 +883,7 @@ impl Core {
 	}
 }
 
-pub fn create_and_run(
-	repaint_frontend_callback: Box<dyn Fn() + Send>,
-) -> (StateReceiver, EventSender) {
+pub fn create_and_run(repaint_frontend_callback: Box<dyn Fn() + Send>) -> Chip8Core {
 	//TODO Better starting screen (ROM loading instructions)
 	let state = CoreState::new(PixelBuf::new([WIDTH, HEIGHT]));
 	let (core_state_receiver, core_state_updater) =
@@ -912,8 +909,8 @@ pub fn create_and_run(
 		core.run();
 	});
 
-	(
-		StateReceiver(core_state_receiver),
-		EventSender(frontend_event_sender),
-	)
+	Chip8Core {
+		state: core_state_receiver,
+		event_sender: frontend_event_sender,
+	}
 }

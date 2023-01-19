@@ -1,4 +1,4 @@
-use ch8_core::{pixel_buf::PixelBuf, CoreState, EventSender, StateReceiver};
+use ch8_core::{pixel_buf::PixelBuf, Chip8Core, CoreState};
 use eframe::egui::Context;
 use eframe::{egui, CreationContext, Frame};
 use egui::{RichText, Widget};
@@ -53,8 +53,7 @@ pub struct Gui {
 	max_scale: f32,
 	transparent_frame: egui::containers::Frame,
 	frame_no_margin: egui::containers::Frame,
-	core_state: StateReceiver,
-	event_sender: EventSender,
+	emu_core: Chip8Core,
 	gui_error: Option<String>,
 	last_rom_path: Option<std::path::PathBuf>,
 	side_menu_width: f32,
@@ -67,7 +66,7 @@ pub struct Gui {
 impl Gui {
 	pub fn new(cc: &CreationContext) -> Self {
 		let egui_ctx = cc.egui_ctx.clone();
-		let (state_receiver, event_sender) = ch8_core::create_and_run(Box::new(move || {
+		let emu_core = ch8_core::create_and_run(Box::new(move || {
 			egui_ctx.request_repaint();
 		}));
 
@@ -85,8 +84,7 @@ impl Gui {
 			max_scale: 0.0,
 			transparent_frame: egui::containers::Frame::default(),
 			frame_no_margin: egui::containers::Frame::default(),
-			core_state: state_receiver,
-			event_sender,
+			emu_core,
 			gui_error: None,
 			last_rom_path: None,
 			side_menu_width: 0.0,
@@ -531,11 +529,10 @@ impl Gui {
 		thread::sleep(std::time::Duration::from_millis(100));
 
 		let egui_ctx = ctx.clone();
-		let (state_receiver, events) = ch8_core::create_and_run(Box::new(move || {
+		let emu_core = ch8_core::create_and_run(Box::new(move || {
 			egui_ctx.request_repaint();
 		}));
-		self.core_state = state_receiver;
-		self.event_sender = events;
+		self.emu_core = emu_core;
 
 		self.send_event(ch8_core::Event::ChangeOpcodesPerFrame(opcodes_per_frame));
 	}
@@ -575,7 +572,7 @@ impl Gui {
 	}
 
 	fn send_event(&mut self, event: ch8_core::Event) {
-		match self.event_sender.send(event) {
+		match self.emu_core.send_event(event) {
 			Ok(_) => {}
 			Err(e) => {
 				error!("Error sending event ({})", e);
@@ -592,7 +589,7 @@ impl Gui {
 	}
 
 	fn core(&mut self) -> &CoreState {
-		self.core_state.get()
+		self.emu_core.get_state()
 	}
 
 	fn send_keys_to_core(&mut self, ctx: &Context) {
