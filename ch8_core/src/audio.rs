@@ -19,7 +19,11 @@ impl fmt::Display for Event {
 	}
 }
 
-//TODO Reevaluate audio implementation
+/*TODO
+   Refactor audio implementation
+   One module in ch8_core for internal audio implementation (audio timer, sample buffer, etc.)
+   Separate crate for cpal output (emulator agnostic)
+*/
 
 struct Sound {
 	state: SoundState,
